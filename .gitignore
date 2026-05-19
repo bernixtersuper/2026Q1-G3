@@ -1,0 +1,165 @@
+# =========================
+# Environment & Secrets
+# =========================
+.env
+.env.local
+.env.*.local
+
+# JWT Keys - Keep development keys, ignore production keys
+# The keys in backend/src/main/resources/ are for development only
+# For production, generate new keys and do NOT commit them
+*.pem
+!backend/src/main/resources/privateKey.pem
+!backend/src/main/resources/publicKey.pem
+
+# =========================
+# Java / Maven / Quarkus
+# =========================
+backend/target/
+backend/*.class
+backend/*.jar
+backend/*.war
+backend/*.ear
+backend/*.log
+backend/.quarkus/
+backend/quarkus.log
+
+# Maven
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/mvnw
+backend/mvnw.cmd
+
+# =========================
+# Node.js / Frontend
+# =========================
+node_modules/
+frontend/admin/node_modules/
+frontend/menu/node_modules/
+frontend/admin/dist/
+frontend/menu/dist/
+frontend/admin/.vite/
+frontend/menu/.vite/
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# IDE & Editors
+# =========================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# NetBeans
+nbproject/
+nbbuild/
+dist/
+nbdist/
+
+# =========================
+# OS Generated Files
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =========================
+# Docker
+# =========================
+docker-compose.override.yml
+
+# =========================
+# Terraform
+# =========================
+# Provider plugins and downloaded modules — multi-MB binaries, never commit
+**/.terraform/
+# State files contain secrets (RDS passwords, IAM session tokens, etc.)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+# Crash logs
+crash.log
+crash.*.log
+# Local CLI overrides
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# Saved plan outputs
+*.tfplan
+# NOTE: .terraform.lock.hcl IS committed on purpose — pins provider versions.
+
+# =========================
+# Python (ML / scripts)
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# =========================
+# Testing & Coverage
+# =========================
+coverage/
+*.lcov
+.nyc_output/
+backend/test-output/
+backend/surefire-reports/
+
+# =========================
+# Misc
+# =========================
+*.bak
+*.tmp
+*.temp
+*.swp
+*~
+.cache/
+
+# ML training Lambda build (artefactos locales; regenerar con scripts/build_lambda_dists.sh)
+ml-training/lambda_dist/
+infrastructure/terraform/.build/
+
+*.terraform
+.terraform/
+
+# Terraform state (usar backend remoto S3; ver terraform/scripts/terraform-init-remote.sh)
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/terraform.tfstate.backup
+terraform/backend.hcl
+terraform/lambda_*.zip
+
+*.tfstate
+*.tfstate.backup
+*lock.hcl
+
+*__pycache__
+*__pycache__/
