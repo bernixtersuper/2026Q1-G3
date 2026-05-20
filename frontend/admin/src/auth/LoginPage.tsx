@@ -1,14 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { isAxiosError } from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
-import { authApi } from '@/shared/api/authApi';
-import { canUseCognitoAuth, getCurrentTokens, signInWithEmail } from './cognito';
+import { canUseCognitoAuth, hasCognitoSession, signInWithEmail, signOutEverywhere } from './cognito';
+import { bootstrapBackendSession } from './sessionBootstrap';
 import { useAuth } from './useAuth';
 
 interface AmplifyErrorLike { name?: string; message?: string }
@@ -28,6 +27,8 @@ function describeSignInError(err: unknown): string {
       case 'TooManyRequestsException':
       case 'LimitExceededException':
         return 'Too many attempts. Try again in a few minutes.';
+      case 'UserAlreadyAuthenticatedException':
+        return 'You already have an active session. Completing sign-in...';
     }
     if (e.message) return e.message;
   }
@@ -36,12 +37,49 @@ function describeSignInError(err: unknown): string {
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { establishSession } = useAuth();
+  const { establishSession, isAuthenticated } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const configured = canUseCognitoAuth();
+
+  const completeSignIn = useCallback(async () => {
+    const result = await bootstrapBackendSession(establishSession, navigate);
+    if (result.ok) {
+      toast({ title: 'Welcome back', variant: 'success' });
+      return;
+    }
+    await signOutEverywhere();
+    setError(result.error);
+  }, [establishSession, navigate]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/admin', { replace: true });
+      return;
+    }
+    if (!configured) return;
+
+    let cancelled = false;
+    (async () => {
+      if (!(await hasCognitoSession())) return;
+      setRecovering(true);
+      setError('');
+      const result = await bootstrapBackendSession(establishSession, navigate);
+      if (cancelled) return;
+      if (!result.ok) {
+        await signOutEverywhere();
+        setError(result.error);
+      }
+      setRecovering(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [configured, establishSession, isAuthenticated, navigate]);
 
   const handleEmailSignIn = async (e: FormEvent) => {
     e.preventDefault();
@@ -68,7 +106,7 @@ export function LoginPage() {
         return;
       }
 
-      await bootstrapBackendSession();
+      await completeSignIn();
     } catch (err) {
       setError(describeSignInError(err));
     } finally {
@@ -76,25 +114,21 @@ export function LoginPage() {
     }
   };
 
-  const bootstrapBackendSession = async () => {
-    const tokens = await getCurrentTokens();
-    if (!tokens) {
-      setError('Could not read Cognito session. Try signing in again.');
-      return;
-    }
+  const handleUseAnotherAccount = async () => {
+    setError('');
+    setLoading(true);
     try {
-      const session = await authApi.bootstrapSession(tokens.idToken);
-      establishSession(tokens.accessToken, session);
-      toast({ title: 'Welcome back', variant: 'success' });
-      navigate('/admin', { replace: true });
-    } catch (apiError) {
-      if (isAxiosError(apiError) && apiError.response?.status === 401 && apiError.response?.data?.code === 'UNKNOWN_USER') {
-        navigate('/register', { replace: true });
-        return;
-      }
-      setError('Unable to complete sign-in right now.');
+      await signOutEverywhere();
+      setEmail('');
+      setPassword('');
+    } catch {
+      setError('Could not sign out. Refresh the page and try again.');
+    } finally {
+      setLoading(false);
     }
   };
+
+  const busy = loading || recovering;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -102,14 +136,22 @@ export function LoginPage() {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">MenuQR</CardTitle>
           <CardDescription className="text-center">
-            Sign in to manage your restaurant menu
+            {recovering ? 'Restoring your session...' : 'Sign in to manage your restaurant menu'}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleEmailSignIn}>
           <CardContent className="space-y-4">
             {error && (
-              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-                {error}
+              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md space-y-2">
+                <p>{error}</p>
+                <button
+                  type="button"
+                  onClick={() => void handleUseAnotherAccount()}
+                  className="text-primary hover:underline text-xs"
+                  disabled={busy}
+                >
+                  Sign in with a different account
+                </button>
               </div>
             )}
             <div className="space-y-2">
@@ -120,7 +162,7 @@ export function LoginPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={!configured || loading}
+                disabled={!configured || busy}
               />
             </div>
             <div className="space-y-2">
@@ -135,11 +177,11 @@ export function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={!configured || loading}
+                disabled={!configured || busy}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={!configured || loading}>
-              {loading ? 'Signing in...' : 'Sign in'}
+            <Button type="submit" className="w-full" disabled={!configured || busy}>
+              {busy ? (recovering ? 'Restoring session...' : 'Signing in...') : 'Sign in'}
             </Button>
 
             {!configured && (
