@@ -11,31 +11,6 @@ Además, se recompilan datos de interacción que se usan para analitica y entren
 
 ![Diagrama de arquitectura AWS](./Architecture.png)
 
-## Quick Start
-
-Requiere: AWS CLI configurado, Terraform ≥ 1.8.5, Docker, JDK 21 + Maven 3.9+, Node.js 20 LTS.
-
-El repositorio incluye un `terraform/terraform.tfvars` con valores por defecto listos para usar. No es necesario modificarlo para levantar la aplicación.
-
-```bash
-# Solo la primera vez: crea el bucket S3 y tabla DynamoDB para el estado remoto
-bash terraform/scripts/terraform-init-remote.sh
-
-# Deploy completo: Lambdas → terraform apply → backend → frontends
-bash terraform/scripts/deploy.sh
-```
-
-Al finalizar, las URLs de los frontends quedan impresas en la terminal. También se pueden consultar con:
-
-```bash
-terraform output frontend_admin_website_url
-terraform output frontend_menu_website_url
-```
-
-Ver [Instrucciones de Prueba](#instrucciones-de-prueba) para el flujo de uso una vez desplegado.
-
-> Para correr los pasos por separado o más detalles sobre cada script, ver [Instrucciones de Ejecución](#instrucciones-de-ejecución).
-
 ## Requerimientos
 
 Despliegue en **AWS** desde Linux, macOS o [WSL 2](https://learn.microsoft.com/es-es/windows/wsl/install) en Windows. Los scripts usan `bash`.
@@ -120,12 +95,39 @@ Para CI, copiar `TF_STATE_BUCKET` y `TF_STATE_DYNAMODB_TABLE` a los secrets de G
 
 ### Paso a paso
 
+Iniciando desde la carpeta raiz del repositorio, ejecutar los siguientes comandos
+
 ```bash
-bash ml-training/scripts/build_lambda_dists.sh
-bash terraform/scripts/terraform-init-remote.sh   # omitir si backend.hcl ya existe
-cd terraform && terraform apply -var-file=terraform.tfvars
-bash terraform/scripts/deploy-backend.sh
-bash terraform/scripts/deploy-frontends.sh
+bash terraform/scripts/terraform-init-remote.sh #Solo si el backend remoto no fue inicializado 
+```
+
+```bash
+bash ml-training/scripts/build_lambda_dists.sh 
+```
+
+```bash
+cd ./terraform
+```
+
+```bash
+terraform init
+```
+
+```bash
+terraform apply
+```
+
+```bash
+bash scripts/deploy-backend.sh
+```
+
+```bash
+bash scripts/deploy-frontends.sh
+```
+
+```bash
+terraform output frontend_admin_website_url
+terraform output frontend_menu_website_url
 ```
 
 ### Alternativa - Script completo
@@ -138,6 +140,8 @@ bash terraform/scripts/deploy.sh
 ```
 
 ### Outputs útiles
+
+Las URL de las pagínas y API se pueden consultar con 
 
 ```bash
 terraform output backend_api_url
@@ -170,27 +174,17 @@ Por este motivo, Terraform se utiliza únicamente para crear y configurar la inf
 **Desde la consola de admin** (`frontend_admin_website_url`):
 
 1. **Registrar una cuenta** — Crear un nuevo usuario para el restaurante.
-2. **Crear una mesa** — En la sección de mesas, agregar una nueva. Al crearla se genera un código QR que apunta a la URL del menú para esa mesa.
-3. **Crear un menú** — Desde el panel de admin, crear un menú para el restaurante.
-4. **Agregar una sección** — Dentro del menú, crear al menos una sección (ej: "Entradas", "Platos principales", "Bebidas").
-5. **Agregar platos** — Agregar platos a cada sección con nombre, descripción y precio.
+2. **Crear un menú** — Desde el panel de admin, crear un menú para el restaurante.
+3. **Agregar una sección** — Dentro del menú, crear al menos una sección (ej: "Entradas", "Platos principales", "Bebidas").
+4. **Agregar platos** — Agregar platos a cada sección con nombre, descripción y precio.
+5. **Crear una mesa** — En la sección de mesas, agregar una nueva. Al crearla se genera un código QR que apunta a la URL del menú para esa mesa.
 
-**Desde la interfaz de cliente** (`frontend_menu_website_url`, o escaneando el QR de la mesa):
+**Desde la interfaz de cliente** (copiando la URL o escaneando el QR de la mesa):
 
 6. **Hacer un pedido** — Navegar el menú, agregar platos al carrito y confirmar la orden. Antes de confirmar se muestran recomendaciones personalizadas (o aleatorias si no hay modelo entrenado aún).
 
-**De vuelta en la consola de admin**:
-
-7. **Actualizar el estado del pedido** — En la sección de órdenes, ir cambiando el estado del pedido (ej: recibido → en preparación → listo).
-8. **Recibir solicitud de cuenta** — El cliente puede marcar "pedir la cuenta" desde la interfaz de usuario; esto se refleja en la consola de admin.
-9. **Cerrar el pedido** — Marcar el pedido como cerrado desde la consola de admin. El cobro queda a cargo del negocio por sus propios medios (el sistema no gestiona pagos).
-
-### Dashboard de analytics
-
-1. **Abrir el dashboard** — Desde la consola de admin, navegar a la sección de analytics.
-2. **Ver métricas de pedidos** — Explorar las analíticas de los últimos pedidos: platos más pedidos, tendencias por período, etc.
-
-> Para que el dashboard tenga datos relevantes, conviene haber generado varios pedidos con distintos platos antes de abrirlo.
+7. **Actualizar el estado del pedido** — El administrador puede cambiar el estado del pedido (recibido, en preparación, etc). El cliente por su parte puede pedir la cuenta desde su interfaz
+8. **Cerrar el pedido** — Marcar el pedido como cerrado desde la consola de admin. El cobro queda a cargo del negocio por sus propios medios (el sistema no gestiona pagos).
 
 ### Modelos de recomendación (ML)
 
@@ -214,6 +208,8 @@ aws lambda invoke \
 
 cat /tmp/orchestrator-out.json
 ```
+
+Luego, puede verificarse que haya sido creado en el bucket de ML. Si no hay tenants registrados, no se creará ningun modelo.
 
 ## Terraform
 
@@ -260,13 +256,13 @@ En cada **pull request** o **push** que toque `terraform/` (u otras rutas del wo
 
 Configurarlos en **Settings → Secrets and variables → Actions → Repository secrets**
 
-| Secret | Obligatorio | Descripción |
-|--------|-------------|-------------|
+| Secret | Obligatorio    | Descripción |
+|--------|----------------|-------------|
 | `AWS_ACCESS_KEY_ID` | Sí (para plan) | Access key de la cuenta AWS (p. ej. credenciales temporales de AWS Academy). |
 | `AWS_SECRET_ACCESS_KEY` | Sí (para plan) | Secret asociado a la access key. |
-| `AWS_SESSION_TOKEN` | Sí en Academy | Token de sesión temporal. En cuentas con claves permanentes puede omitirse o dejarse vacío. |
-| `TF_STATE_BUCKET` | No (recomendado) | Bucket S3 del estado remoto (ver [Estado remoto](#estado-remoto-s3--dynamodb)). |
-| `TF_STATE_DYNAMODB_TABLE` | No (recomendado) | Tabla DynamoDB de locks (`menuqr-tf-locks`). |
+| `AWS_SESSION_TOKEN` | Sí en Academy  | Token de sesión temporal. En cuentas con claves permanentes puede omitirse o dejarse vacío. |
+| `TF_STATE_BUCKET` | No             | Bucket S3 del estado remoto (ver [Estado remoto](#estado-remoto-s3--dynamodb)). |
+| `TF_STATE_DYNAMODB_TABLE` | No             | Tabla DynamoDB de locks (`menuqr-tf-locks`). |
 
 La región usada en CI es `us-east-1`, igual que en `terraform/provider.tf`.
 
