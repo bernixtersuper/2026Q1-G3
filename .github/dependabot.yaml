@@ -7,10 +7,10 @@
 version: 2
 updates:
   # --------------------------------------------------------------
-  #  Looking for a `terraform.tf` file in the ORGANIZATION path
+  #  Terraform root stack (terraform/versions.tf, provider.tf, etc.)
   # -------------------------------------------------------------- 
   - package-ecosystem: 'terraform'
-    directory: '/terraform/organization'
+    directory: '/terraform'
     schedule:
       interval: 'weekly'
     ignore:
