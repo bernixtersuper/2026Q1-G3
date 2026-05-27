@@ -22,21 +22,37 @@ require_cmd() {
 require_cmd terraform
 require_cmd aws
 
-echo "==> Bootstrap remoto (S3 + DynamoDB)"
-if [[ ! -d "${BOOTSTRAP_DIR}/.terraform" ]]; then
-  terraform -chdir="${BOOTSTRAP_DIR}" init -input=false
-fi
-terraform -chdir="${BOOTSTRAP_DIR}" apply -input=false -auto-approve -var="project_name=${PROJECT_NAME}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+NAME_PREFIX="$(echo "${PROJECT_NAME}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+BUCKET="${NAME_PREFIX}-tfstate-${ACCOUNT_ID}"
+TABLE="${NAME_PREFIX}-tf-locks"
+KEY="${NAME_PREFIX}/terraform.tfstate"
 
-BUCKET="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw state_bucket_name)"
-TABLE="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw lock_table_name)"
-KEY="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw state_key)"
+remote_backend_exists() {
+  aws s3api head-bucket --bucket "${BUCKET}" >/dev/null 2>&1 \
+    && aws dynamodb describe-table --table-name "${TABLE}" --region "${AWS_REGION}" >/dev/null 2>&1
+}
+
+if remote_backend_exists; then
+  echo "==> Backend remoto ya existe (bucket=${BUCKET}, table=${TABLE}); omitiendo bootstrap apply"
+else
+  echo "==> Bootstrap remoto (S3 + DynamoDB)"
+  if [[ ! -d "${BOOTSTRAP_DIR}/.terraform" ]]; then
+    terraform -chdir="${BOOTSTRAP_DIR}" init -input=false
+  fi
+  terraform -chdir="${BOOTSTRAP_DIR}" apply -input=false -auto-approve -var="project_name=${PROJECT_NAME}"
+
+  BUCKET="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw state_bucket_name)"
+  TABLE="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw lock_table_name)"
+  KEY="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw state_key)"
+fi
 
 cat > "${BACKEND_HCL}" <<EOF
 bucket         = "${BUCKET}"
 dynamodb_table = "${TABLE}"
 key            = "${KEY}"
-region         = "us-east-1"
+region         = "${AWS_REGION}"
 encrypt        = true
 EOF
 

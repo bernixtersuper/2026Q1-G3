@@ -1,0 +1,75 @@
+name: Terraform init remote
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-init-remote
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  init-remote:
+    name: Bootstrap S3 backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          missing=()
+          [ -z "$AWS_ACCESS_KEY_ID" ] && missing+=("AWS_ACCESS_KEY_ID")
+          [ -z "$AWS_SECRET_ACCESS_KEY" ] && missing+=("AWS_SECRET_ACCESS_KEY")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Faltan secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+          terraform_wrapper: false
+
+      - name: Init remote backend
+        run: bash terraform/scripts/terraform-init-remote.sh
+
+      - name: GitHub secrets to configure
+        run: |
+          BUCKET="$(awk -F'"' '/^[[:space:]]*bucket[[:space:]]*=/ {print $2; exit}' terraform/backend.hcl)"
+          TABLE="$(awk -F'"' '/^[[:space:]]*dynamodb_table[[:space:]]*=/ {print $2; exit}' terraform/backend.hcl)"
+
+          {
+            echo "## Secrets para GitHub Actions"
+            echo ""
+            echo "Copiá estos valores en **Settings → Secrets and variables → Actions → Repository secrets**:"
+            echo ""
+            echo "| Secret | Valor |"
+            echo "|--------|-------|"
+            echo "| \`TF_STATE_BUCKET\` | \`${BUCKET}\` |"
+            echo "| \`TF_STATE_DYNAMODB_TABLE\` | \`${TABLE}\` |"
+            echo ""
+            echo "Luego podés ejecutar el workflow **AWS deploy**."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "TF_STATE_BUCKET=${BUCKET}"
+          echo "TF_STATE_DYNAMODB_TABLE=${TABLE}"

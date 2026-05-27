@@ -91,7 +91,9 @@ bash terraform/scripts/terraform-init-remote.sh
 
 Genera `terraform/backend.hcl` (no se commitea) y deja listo `terraform init` contra S3.
 
-Para CI, copiar `TF_STATE_BUCKET` y `TF_STATE_DYNAMODB_TABLE` a los secrets de GitHub (salida de `terraform -chdir=terraform/bootstrap output`).
+Para CI, copiar `TF_STATE_BUCKET` y `TF_STATE_DYNAMODB_TABLE` a los secrets de GitHub (salida del script, del workflow **Terraform init remote**, o `terraform -chdir=terraform/bootstrap output`).
+
+El script es **idempotente**: si el bucket y la tabla ya existen en la cuenta, omite el `apply` del bootstrap y solo escribe `backend.hcl` + `terraform init`.
 
 ### Paso a paso
 
@@ -233,34 +235,25 @@ MIGRATE_LOCAL_STATE=1 bash terraform/scripts/terraform-init-remote.sh
 
 `deploy.sh` usa `backend.hcl` automáticamente si existe.
 
-**CI:** tras el bootstrap, añade en GitHub Secrets (valores de `terraform -chdir=terraform/bootstrap output`):
-
-| Secret | Ejemplo |
-|--------|---------|
-| `TF_STATE_BUCKET` | `menuqr-tfstate-123456789012` |
-| `TF_STATE_DYNAMODB_TABLE` | `menuqr-tf-locks` |
-
-Sin esos secrets el plan en Actions sigue funcionando con `-backend=false` (solo validación de configuración, sin state compartido).
+**CI:** los mismos valores van a los secrets del repositorio (ver [Secrets del repositorio](#secrets-del-repositorio) y el workflow **Terraform init remote**, que los imprime en el job summary). Ejemplo: `menuqr-tfstate-123456789012`, `menuqr-tf-locks`.
 
 Plantilla: `terraform/backend.hcl.example`.
 
-### CI en GitHub Actions (`terraform_init_validate_plan.yml`)
+### CI en GitHub Actions
 
-En cada **pull request** o **push** que toque `terraform/` (u otras rutas del workflow), se ejecuta `terraform fmt`, `validate` y, si hay credenciales AWS configuradas, un `terraform plan` contra la cuenta real.
+La región usada en CI es `us-east-1`, igual que en `terraform/provider.tf`.
 
 #### Secrets del repositorio
 
 Configurarlos en **Settings → Secrets and variables → Actions → Repository secrets**
 
-| Secret | Obligatorio    | Descripción |
-|--------|----------------|-------------|
-| `AWS_ACCESS_KEY_ID` | Sí (para plan) | Access key de la cuenta AWS (p. ej. credenciales temporales de AWS Academy). |
-| `AWS_SECRET_ACCESS_KEY` | Sí (para plan) | Secret asociado a la access key. |
-| `AWS_SESSION_TOKEN` | Sí en Academy  | Token de sesión temporal. En cuentas con claves permanentes puede omitirse o dejarse vacío. |
-| `TF_STATE_BUCKET` | No             | Bucket S3 del estado remoto (ver [Estado remoto](#estado-remoto-s3--dynamodb)). |
-| `TF_STATE_DYNAMODB_TABLE` | No             | Tabla DynamoDB de locks (`menuqr-tf-locks`). |
-
-La región usada en CI es `us-east-1`, igual que en `terraform/provider.tf`.
+| Secret | Plan / init remoto | Deploy (remoto) | Deploy (local) | Descripción |
+|--------|-------------------|-----------------|----------------|-------------|
+| `AWS_ACCESS_KEY_ID` | Sí | Sí | Sí | Access key (p. ej. AWS Academy). |
+| `AWS_SECRET_ACCESS_KEY` | Sí | Sí | Sí | Secret asociado. |
+| `AWS_SESSION_TOKEN` | Sí en Academy | Sí en Academy | Sí en Academy | Token de sesión temporal. |
+| `TF_STATE_BUCKET` | No | **Sí** | No | Bucket S3 del estado remoto. |
+| `TF_STATE_DYNAMODB_TABLE` | No | **Sí** | No | Tabla DynamoDB de locks. |
 
 **Cómo obtener los valores (AWS Academy):**
 
@@ -269,7 +262,50 @@ La región usada en CI es `us-east-1`, igual que en `terraform/provider.tf`.
 3. En **AWS Details** → **AWS CLI**, copiar las credenciales que muestra el panel (incluyen `aws_access_key_id`, `aws_secret_access_key` y `aws_session_token`).
 4. Pegar cada valor en el secret homónimo del repositorio de GitHub.
 
-Renovar los secrets cuando expire la sesión del lab (suelen caducar tras unas horas); si el plan falla con `ExpiredToken`, actualizar los tres secrets `AWS_*`.
+Renovar los secrets cuando expire la sesión del lab (suelen caducar tras unas horas); si falla con `ExpiredToken`, actualizar los tres secrets `AWS_*`.
+
+#### Workflows (manual, `workflow_dispatch`)
+
+| Workflow | Archivo | Cuándo usarlo |
+|----------|---------|---------------|
+| **Terraform init remote** | `.github/workflows/terraform-init-remote.yml` | **Primera vez** por cuenta AWS (o tras reset del lab): crea bucket S3 + tabla DynamoDB, ejecuta `terraform init` contra el backend remoto e imprime los valores para `TF_STATE_*`. Idempotente si los recursos ya existen. |
+| **AWS deploy** | `.github/workflows/aws-deploy.yml` | Despliegue completo: Lambdas → `terraform apply` → espera RDS Proxy → backend (ECR/ECS) → frontends (S3). Por defecto usa backend remoto (`use_remote_backend: true`). |
+| **Terraform init, validate & plan** | `.github/workflows/terraform_init_validate_plan.yml` | Validación y plan (también en PR/push). `TF_STATE_*` opcionales. |
+
+**AWS deploy — inputs al ejecutar el workflow:**
+
+| Input | Default | Descripción |
+|-------|---------|-------------|
+| `use_remote_backend` | `true` | Con `true`: `terraform init` contra S3 (secrets `TF_STATE_*` obligatorios). Con `false`: `terraform init -backend=false` (state local en el runner; solo `AWS_*`). |
+
+**Orden recomendado en CI (backend remoto):**
+
+1. Configurar secrets `AWS_*` (Learner Lab) en **Settings → Secrets and variables → Actions → Repository secrets**.
+2. Ejecutar **Terraform init remote** → en el **Summary** del job aparece una tabla con `TF_STATE_BUCKET` y `TF_STATE_DYNAMODB_TABLE`; copiarlos a secrets del repo.
+3. Ejecutar **AWS deploy** (dejar `use_remote_backend` activado).
+
+**Dónde ver las URLs tras el deploy (Actions):**
+
+Al finalizar **AWS deploy**, el paso *Deployment URLs* escribe en el **Summary** del job:
+
+| Recurso | Origen |
+|---------|--------|
+| API backend | `backend_api_url` |
+| Admin SPA (sitio web) | `frontend_admin_website_url` |
+| Menú público (sitio web) | `frontend_menu_website_url` |
+| RDS Proxy | `db_proxy_endpoint` |
+
+Son las URLs HTTP del ALB y de los buckets S3 con website hosting (mismos `terraform output` que en la sección **Outputs útiles** más abajo). Los artefactos estáticos viven en los buckets `frontend_admin_s3_bucket` y `frontend_menu_s3_bucket` (visibles en los logs del paso *Deploy frontends*, no en ese summary).
+
+**Deploy sin backend remoto (solo pruebas):**
+
+En **Run workflow**, desactivar `use_remote_backend`. No hace falta `TF_STATE_*`. El state vive solo en el runner del job: **no persiste** entre ejecuciones; un segundo deploy puede chocar con recursos ya creados en AWS o intentar recrearlos. Útil para un lab desechable o una primera prueba rápida; para trabajo habitual usar remoto.
+
+Equivalente local con remoto: `bash terraform/scripts/terraform-init-remote.sh` y luego `bash terraform/scripts/deploy.sh`. Sin remoto: `terraform init -backend=false` en `terraform/` y el mismo `deploy.sh` (si no existe `backend.hcl`).
+
+#### Plan en PR/push (`terraform_init_validate_plan.yml`)
+
+En cada **pull request** o **push** que toque `terraform/` (u otras rutas del workflow), se ejecuta `terraform fmt`, `validate` y, si hay credenciales AWS configuradas, un `terraform plan` contra la cuenta real.
 
 ### Módulos propios
 

@@ -1,0 +1,235 @@
+name: AWS deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_remote_backend:
+        description: "Backend remoto S3 (recomendado). Desactivar = state local en el runner (efímero)."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  TF_VAR_FILE: terraform.tfvars
+  USE_REMOTE_BACKEND: ${{ inputs.use_remote_backend }}
+
+jobs:
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_DYNAMODB_TABLE: ${{ secrets.TF_STATE_DYNAMODB_TABLE }}
+        run: |
+          missing=()
+          [ -z "$AWS_ACCESS_KEY_ID" ] && missing+=("AWS_ACCESS_KEY_ID")
+          [ -z "$AWS_SECRET_ACCESS_KEY" ] && missing+=("AWS_SECRET_ACCESS_KEY")
+          if [ "${USE_REMOTE_BACKEND}" = "true" ]; then
+            [ -z "$TF_STATE_BUCKET" ] && missing+=("TF_STATE_BUCKET")
+            [ -z "$TF_STATE_DYNAMODB_TABLE" ] && missing+=("TF_STATE_DYNAMODB_TABLE")
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Faltan secrets obligatorios: ${missing[*]}"
+            if [ "${USE_REMOTE_BACKEND}" = "true" ]; then
+              echo "Configurá AWS_* y TF_STATE_* (workflow 'Terraform init remote' o README → Estado remoto)."
+            else
+              echo "Configurá AWS_* o activá 'use_remote_backend' con TF_STATE_* configurados."
+            fi
+            exit 1
+          fi
+          if [ "${USE_REMOTE_BACKEND}" = "true" ]; then
+            echo "Modo: backend remoto (S3)."
+          else
+            echo "::warning::Modo: state local en el runner (sin S3). El state no persiste entre runs; un segundo deploy puede intentar recrear recursos o fallar. Solo para pruebas puntuales."
+            echo "Modo: backend local (-backend=false)."
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify remote state backend exists
+        if: env.USE_REMOTE_BACKEND == 'true'
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_DYNAMODB_TABLE: ${{ secrets.TF_STATE_DYNAMODB_TABLE }}
+        run: |
+          ok=true
+          if ! aws s3api head-bucket --bucket "${TF_STATE_BUCKET}" >/dev/null 2>&1; then
+            echo "::error::Bucket S3 no encontrado: ${TF_STATE_BUCKET}"
+            ok=false
+          fi
+          if ! aws dynamodb describe-table \
+            --table-name "${TF_STATE_DYNAMODB_TABLE}" \
+            --region "${AWS_REGION}" >/dev/null 2>&1; then
+            echo "::error::Tabla DynamoDB no encontrada: ${TF_STATE_DYNAMODB_TABLE}"
+            ok=false
+          fi
+          if [ "${ok}" != "true" ]; then
+            echo "::error::Ejecutá el workflow 'Terraform init remote' (o bash terraform/scripts/terraform-init-remote.sh) y configurá TF_STATE_* en los secrets."
+            exit 1
+          fi
+          echo "Backend remoto verificado (S3 + DynamoDB)."
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+          terraform_wrapper: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            frontend/admin/package-lock.json
+            frontend/menu/package-lock.json
+
+      - name: Setup Maven (Java 21)
+        uses: s4u/setup-maven-action@v1.20.0
+        with:
+          checkout-enabled: "false"
+          java-version: "21"
+          java-distribution: "temurin"
+          maven-version: "3.9.9"
+          cache-path: "~/.m2/repository"
+
+      - name: Build Lambda artifacts
+        run: bash ml-training/scripts/build_lambda_dists.sh
+
+      - name: Write Terraform backend config
+        if: env.USE_REMOTE_BACKEND == 'true'
+        working-directory: terraform
+        run: |
+          cat > backend.hcl <<EOF
+          bucket         = "${{ secrets.TF_STATE_BUCKET }}"
+          dynamodb_table = "${{ secrets.TF_STATE_DYNAMODB_TABLE }}"
+          key            = "menuqr/terraform.tfstate"
+          region         = "${{ env.AWS_REGION }}"
+          encrypt        = true
+          EOF
+
+      - name: Terraform init
+        working-directory: terraform
+        run: |
+          if [ "${USE_REMOTE_BACKEND}" = "true" ]; then
+            terraform init -backend-config=backend.hcl -input=false
+          else
+            terraform init -backend=false -input=false
+          fi
+
+      - name: Terraform apply
+        working-directory: terraform
+        run: terraform apply -var-file="${{ env.TF_VAR_FILE }}" -input=false -auto-approve
+
+      - name: Wait for RDS Proxy
+        working-directory: terraform
+        env:
+          RDS_PROXY_WAIT_ATTEMPTS: "40"
+          RDS_PROXY_WAIT_INTERVAL_SEC: "30"
+        run: |
+          PROJECT_NAME="$(awk -F'"' '/^[[:space:]]*project_name[[:space:]]*=/ {print $2; exit}' terraform.tfvars)"
+          PROXY_NAME="${PROJECT_NAME}-rds-proxy"
+          echo "Esperando RDS Proxy '${PROXY_NAME}' (proxy=available, target health=AVAILABLE via describe-db-proxy-targets)..."
+
+          for attempt in $(seq 1 "${RDS_PROXY_WAIT_ATTEMPTS}"); do
+            PROXY_STATUS="$(aws rds describe-db-proxies \
+              --db-proxy-name "${PROXY_NAME}" \
+              --region "${AWS_REGION}" \
+              --query 'DBProxies[0].Status' \
+              --output text 2>/dev/null || echo "unknown")"
+
+            # TargetHealth no viene en describe-db-proxies; usar describe-db-proxy-targets
+            TARGET_STATE="$(aws rds describe-db-proxy-targets \
+              --db-proxy-name "${PROXY_NAME}" \
+              --region "${AWS_REGION}" \
+              --query 'Targets[?Role==`READ_WRITE`] | [0].TargetHealth.State' \
+              --output text 2>/dev/null || true)"
+            if [ -z "${TARGET_STATE}" ] || [ "${TARGET_STATE}" = "None" ]; then
+              TARGET_STATE="$(aws rds describe-db-proxy-targets \
+                --db-proxy-name "${PROXY_NAME}" \
+                --region "${AWS_REGION}" \
+                --query 'Targets[0].TargetHealth.State' \
+                --output text 2>/dev/null || echo "unknown")"
+            fi
+
+            TARGET_REASON="$(aws rds describe-db-proxy-targets \
+              --db-proxy-name "${PROXY_NAME}" \
+              --region "${AWS_REGION}" \
+              --query 'Targets[0].TargetHealth.Reason' \
+              --output text 2>/dev/null || true)"
+
+            echo "  intento ${attempt}/${RDS_PROXY_WAIT_ATTEMPTS}: proxy=${PROXY_STATUS} target=${TARGET_STATE} reason=${TARGET_REASON:-n/a}"
+
+            if [ "${PROXY_STATUS}" = "available" ] && [ "${TARGET_STATE}" = "AVAILABLE" ]; then
+              echo "RDS Proxy listo."
+              exit 0
+            fi
+
+            if [ "${TARGET_STATE}" = "UNAVAILABLE" ] && [ "${TARGET_REASON}" != "PENDING_PROXY_CAPACITY" ]; then
+              TARGET_DESC="$(aws rds describe-db-proxy-targets \
+                --db-proxy-name "${PROXY_NAME}" \
+                --region "${AWS_REGION}" \
+                --query 'Targets[0].TargetHealth.Description' \
+                --output text 2>/dev/null || true)"
+              echo "::error::RDS Proxy target UNAVAILABLE (${TARGET_REASON}: ${TARGET_DESC}). Revisá SG, Secrets Manager y que RDS esté available."
+              exit 1
+            fi
+
+            sleep "${RDS_PROXY_WAIT_INTERVAL_SEC}"
+          done
+
+          echo "::error::Timeout (~$((RDS_PROXY_WAIT_ATTEMPTS * RDS_PROXY_WAIT_INTERVAL_SEC / 60)) min) esperando RDS Proxy '${PROXY_NAME}'."
+          exit 1
+
+      - name: Deploy backend (ECR + ECS)
+        run: bash terraform/scripts/deploy-backend.sh
+
+      - name: Deploy frontends (S3)
+        run: bash terraform/scripts/deploy-frontends.sh
+
+      - name: Deployment URLs
+        working-directory: terraform
+        run: |
+          if [ "${USE_REMOTE_BACKEND}" != "true" ]; then
+            echo "::warning::Deploy con state local: no reutilices este modo para actualizar la misma infra; preferí backend remoto." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "## URLs del despliegue" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Recurso | URL |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---------|-----|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| API backend | $(terraform output -raw backend_api_url) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Admin SPA | $(terraform output -raw frontend_admin_website_url) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Menú SPA | $(terraform output -raw frontend_menu_website_url) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| RDS Proxy | $(terraform output -raw db_proxy_endpoint) |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "API:    $(terraform output -raw backend_api_url)"
+          echo "Admin:  $(terraform output -raw frontend_admin_website_url)"
+          echo "Menú:   $(terraform output -raw frontend_menu_website_url)"
