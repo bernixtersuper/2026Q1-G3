@@ -56,6 +56,8 @@ resource "aws_ecs_task_definition" "backend" {
       { name = "RECOMMENDATIONS_MODEL_S3_BUCKET", value = local.ml_bucket_name },
       { name = "COGNITO_ISSUER_URL", value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}" },
       { name = "COGNITO_CLIENT_ID", value = aws_cognito_user_pool_client.admin_spa.id },
+      { name = "QUARKUS_HTTP_CORS_ORIGINS", value = local.cors_allowed_origins },
+      { name = "S3_PRESIGN_TTL_SECONDS", value = "3600" },
     ]
   }])
 }

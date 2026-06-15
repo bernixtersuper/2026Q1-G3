@@ -1,0 +1,51 @@
+Entregables:
+
+1. Diagrama de Arquitectura Actualizado
+
+  - Requisito: Debe reflejar fielmente la implementación actual
+
+---
+
+Requisitos Técnicos:
+
+1. Implementación Completa
+
+  - Todos los componentes propuestos en la primera entrega
+
+  - Funcionalidad integral de la solución
+
+2. Elasticidad
+
+  - Inclusión de servicios que provean desacople y elasticidad (Por lo menos un SQS o SNS)
+
+  - Autenticación de usuarios con Cognito (si aplica)
+
+3. Terraform
+
+  - No es necesario presentar toda la solución en Terraform
+
+  - La evaluación de Terraform se completó en la Entrega 3
+
+---
+
+Criterios de Evaluación:
+
+1. Calidad y completitud de la implementación
+
+2. Alineación con la propuesta original
+
+3. Habilidad para explicar y justificar decisiones técnicas
+
+4. Capacidad de respuesta ante preguntas y solicitudes de cambios
+
+5. Funcionamiento efectivo de la solución en tiempo real
+
+---
+
+Rubrica:
+
+Teoria Cloud / Presentación -> 40%
+Diagrama -> 10%
+Cognito y Seguridad -> 20%
+Buen Uso de SQS o SNS -> 10%
+Calidad y Completitud de la Implementación (funcionalidad) -> 20%

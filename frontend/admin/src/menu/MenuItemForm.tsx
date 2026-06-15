@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Upload } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import type { MenuItem, MenuSection, DietaryTag, CreateItemRequest } from '@/shared/types';
-import { imageSrc, normalizeImageUrlForForm } from '@/shared/lib/imageUrl';
+import { imageSrc } from '@/shared/lib/imageUrl';
 
 interface MenuItemFormProps {
   open: boolean;
@@ -67,7 +67,7 @@ export function MenuItemForm({ open, onClose, item, sections, defaultSectionId }
           name: item.name,
           description: item.description || '',
           price: item.price,
-          imageUrl: normalizeImageUrlForForm(item.imageUrl || ''),
+          imageUrl: item.imageUrl || '',
           dietaryTags: item.dietaryTags,
           displayOrder: item.displayOrder,
         });
@@ -181,8 +181,8 @@ export function MenuItemForm({ open, onClose, item, sections, defaultSectionId }
 
     setUploading(true);
     try {
-      const url = await menuApi.uploadImage(file);
-      setFormData((prev) => ({ ...prev, imageUrl: normalizeImageUrlForForm(url) }));
+      const { previewUrl } = await menuApi.uploadImage(file);
+      setFormData((prev) => ({ ...prev, imageUrl: previewUrl }));
       setErrors(prev => {
         const { image, ...rest } = prev;
         return rest;

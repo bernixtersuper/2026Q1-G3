@@ -36,4 +36,9 @@ locals {
   ml_training_root = "${path.module}/../ml-training"
 
   backend_image = "${aws_ecr_repository.backend.repository_url}:${var.backend.image_tag}"
+
+  cors_allowed_origins = join(",", [
+    module.s3-public-websites[var.admin_website_name].bucket_website_url,
+    module.s3-public-websites[var.user_website_name].bucket_website_url,
+  ])
 }

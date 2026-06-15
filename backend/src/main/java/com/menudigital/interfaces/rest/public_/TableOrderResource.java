@@ -16,7 +16,7 @@ import com.menudigital.domain.table.TableSession;
 import com.menudigital.domain.tenant.Restaurant;
 import com.menudigital.domain.tenant.RestaurantRepository;
 import com.menudigital.domain.tenant.RestaurantTheme;
-import com.menudigital.infrastructure.storage.MenuImageUrls;
+import com.menudigital.infrastructure.storage.S3ImageStorageService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
@@ -59,7 +59,7 @@ public class TableOrderResource {
     OrderEventBroadcaster orderEventBroadcaster;
 
     @Inject
-    MenuImageUrls menuImageUrls;
+    S3ImageStorageService imageStorageService;
     
     @GET
     @Path("/{qrToken}")
@@ -494,7 +494,7 @@ public class TableOrderResource {
             item.getName(),
             item.getDescription(),
             item.getPrice().toPlainString(),
-            menuImageUrls.toApiPath(item.getImageUrl()),
+            imageStorageService.toPresignedUrl(item.getImageUrl()),
             item.getDietaryTags().stream().map(Enum::name).toList(),
             modifiers
         );

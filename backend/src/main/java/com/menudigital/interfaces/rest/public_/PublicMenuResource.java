@@ -5,7 +5,7 @@ import com.menudigital.application.menu.dto.MenuDTOs.*;
 import com.menudigital.domain.menu.Menu;
 import com.menudigital.domain.menu.MenuItem;
 import com.menudigital.domain.menu.MenuSection;
-import com.menudigital.infrastructure.storage.MenuImageUrls;
+import com.menudigital.infrastructure.storage.S3ImageStorageService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -21,7 +21,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 public class PublicMenuResource {
     
     @Inject
-    MenuImageUrls menuImageUrls;
+    S3ImageStorageService imageStorageService;
 
     @Inject
     GetPublicMenuUseCase getPublicMenuUseCase;
@@ -88,7 +88,7 @@ public class PublicMenuResource {
             item.getName(),
             item.getDescription(),
             item.getPrice().toPlainString(),
-            menuImageUrls.toApiPath(item.getImageUrl()),
+            imageStorageService.toPresignedUrl(item.getImageUrl()),
             item.isAvailable(),
             item.getDietaryTags(),
             item.getDisplayOrder()
