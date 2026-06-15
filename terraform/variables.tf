@@ -24,9 +24,22 @@ variable "db" {
 
 variable "backend" {
   type = object({
-    image_tag     = string
-    desired_count = number
+    image_tag              = string
+    desired_count          = number
+    autoscaling_min        = optional(number, 2)
+    autoscaling_max        = optional(number, 4)
+    autoscaling_target_cpu = optional(number, 70)
   })
+
+  validation {
+    condition     = var.backend.autoscaling_min <= var.backend.autoscaling_max
+    error_message = "backend.autoscaling_min must be less than or equal to backend.autoscaling_max."
+  }
+
+  validation {
+    condition     = var.backend.desired_count >= var.backend.autoscaling_min && var.backend.desired_count <= var.backend.autoscaling_max
+    error_message = "backend.desired_count must be between autoscaling_min and autoscaling_max."
+  }
 }
 
 variable "ml_training" {
