@@ -81,3 +81,7 @@ output "cognito_user_pool_client_id" {
 output "cognito_issuer_url" {
   value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
 }
+
+output "waf_web_acl_arn" {
+  value = var.waf.enabled ? aws_wafv2_web_acl.alb[0].arn : null
+}

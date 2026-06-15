@@ -141,7 +141,7 @@ export function SecurityPage() {
             <div>
               <CardTitle>Authenticator app (TOTP)</CardTitle>
               <CardDescription>
-                Google Authenticator, Authy, or similar. Not required unless you enable it.
+                Any TOTP-compatible app (Authenticator, Authy, Microsoft Authenticator, etc.). Not required unless you enable it.
               </CardDescription>
             </div>
           </div>

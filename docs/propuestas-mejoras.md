@@ -145,14 +145,20 @@ Permite queries directas por tipo sin scan ni filtro en app.
 
 Implementado: `QUARKUS_HTTP_CORS_ORIGINS` en ECS con las URLs de admin y menú (`local.cors_allowed_origins` en Terraform); dev local mantiene default `localhost:5173,5174` en `application.properties`.
 
-### B2. WAF con rate limiting ⚠️ Lab
+### B2. WAF con rate limiting ✅ Hecho
 
-AWS WAF está disponible en el lab. Reglas sugeridas sobre el ALB:
+Implementado en `terraform/waf.tf` — Web ACL regional asociado al ALB:
 
-- Rate-based rule en `POST /api/menu/*/events` (anti-spam de analytics).
-- Bloqueo de patrones conocidos (SQLi, XSS básico).
+| Regla | Acción | Propósito |
+|-------|--------|-----------|
+| `rate-limit-global` | Block | Máx. **5000** requests por IP / 5 min (~17 req/s sostenido) |
+| `AWSManagedRulesKnownBadInputsRuleSet` | Block | Payloads maliciosos conocidos |
 
-**Presupuesto:** WAF tiene costo por regla + requests; usar 1–2 reglas simples.
+Una sola regla rate-based (sin límite aparte en `/events`): evita falsos positivos con NAT compartido y picos legítimos del admin; sigue frenando floods obvios.
+
+Variables: `waf.global_rate_limit`, `waf.enabled`.
+
+**¿WAF o API Gateway?** En esta arquitectura el front door es el **ALB → ECS**; WAF en el ALB es el lugar correcto. API Gateway aportaría throttling si fuera el entry point, pero añadiría hop, costo y duplicación sin beneficio claro para MenuQR.
 
 ### B3. Endurecer endpoint público de eventos ✅ Lab
 
@@ -327,7 +333,7 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 | C2 | Alarmas CloudWatch | Medio (demo en vivo) | Medio | ✅ | **P2** | ✅ |
 | F1 | Log groups | Medio (debug) | Bajo | ✅ | **P2** | ✅ |
 | F2 | Dashboard CloudWatch | Alto (demo TP4) | Medio | ✅ | **P2** | ✅ |
-| B2 | WAF rate limit | Medio (seguridad) | Medio | ⚠️ | **P2** | ⏳ |
+| B2 | WAF rate limit | Medio (seguridad) | Medio | ✅ | **P2** | ✅ |
 | D1 | Auto Scaling ECS | Alto (elasticidad consigna) | Medio | ✅ | **P2** | ✅ |
 | D2 | Circuit breaker ECS | Medio (deploys) | Bajo | ✅ | **P2** | ✅ |
 | G1 | TTL DynamoDB | Medio (costo + diseño) | Bajo | ✅ | **P2** | ⏳ |
@@ -350,7 +356,7 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 2. ~~Circuit breaker ECS.~~ ✅ Hecho (jun 2026).
 3. ~~SNS en fallos ML.~~ ✅ Hecho (jun 2026).
 4. ~~Alarmas CloudWatch + dashboard.~~ ✅ Hecho (jun 2026).
-5. WAF/CORS como mitigaciones de seguridad en un entorno HTTP (HTTPS documentado solo como evolución post-lab).
+5. ~~WAF/CORS como mitigaciones de seguridad en un entorno HTTP.~~ WAF ✅ (jun 2026); CORS ✅ previo.
 
 ### Iteración 3 — Pulido (opcional)
 

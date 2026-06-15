@@ -42,7 +42,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 |-----------------|------------------|
 | Teoría Cloud / Presentación (40%) | Arquitectura multi-tier, servicios managed, justificación documentada en README |
 | Diagrama (10%) | Diagrama actualizado con VPC, AZs, endpoints, pipeline ML |
-| Cognito y Seguridad (20%) | Cognito + JWT; MFA TOTP optional por usuario; RDS privado + Secrets Manager + RDS Proxy TLS; buckets privados |
+| Cognito y Seguridad (20%) | Cognito + JWT + MFA TOTP optional; WAF en ALB (rate limit global + KnownBadInputs); RDS/Secrets/CORS |
 | Buen uso de SQS/SNS (10%) | SQS con batch failures parciales, DLQ (`maxReceiveCount=3`) y redrive; SNS + email en fallos persistentes del pipeline ML |
 | Calidad y completitud (20%) | Flujo funcional admin → menú → eventos → analytics → ML; dashboard CloudWatch `{prefix}-operations` para demo en vivo |
 
@@ -54,7 +54,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 
 - **VPC** `172.30.0.0/16` con 2 AZs: subnets públicas, privadas (app) y de datos.
 - **NAT Gateway** uno por AZ (`one_nat_gateway_per_az = true`) para salida HA desde subnets privadas.
-- **ALB** público → **ECS Fargate** (2–4 tareas vía auto scaling, puerto 8080) en subnets privadas.
+- **ALB** público → **WAF regional** (rate limit + managed rules) → **ECS Fargate** (2–4 tareas vía auto scaling, puerto 8080) en subnets privadas.
 - **VPC Endpoints**: S3 y DynamoDB (gateway); Secrets Manager, SQS, ECR API/DKR (interface).
 
 ### Datos
@@ -94,7 +94,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 ### Backend (Quarkus)
 
 - Autenticación admin vía **Cognito access token** (`@Authenticated` en recursos admin).
-- **MFA TOTP opcional** (Google Authenticator / Authy): cada usuario lo activa en **Admin → Security**; login pide código solo si está habilitado.
+- **MFA TOTP opcional** (cualquier app compatible con TOTP): cada usuario lo activa en **Admin → Security**; login pide código solo si está habilitado.
 - Bootstrap de sesión con **ID token** verificado (`/api/auth/session`).
 - **Multi-tenancy** resuelto en `TenantRequestFilter` a partir del `sub` de Cognito.
 - Imágenes en bucket S3 **privado** (sin acceso público); lectura vía **URLs prefirmadas** (TTL 1 h). Eliminado el proxy público `/api/media`.
@@ -231,6 +231,17 @@ Panel único para demo TP4 (*funcionamiento en tiempo real*):
 | **Login** | Paso `CONFIRM_SIGN_IN_WITH_TOTP_CODE` | Código de 6 dígitos tras password si MFA activo |
 | **Desactivar** | Security → Disable authenticator | Vuelve a solo email + password |
 
+### WAF — rate limiting en ALB
+
+**Archivo:** `terraform/waf.tf`
+
+| Regla | Límite (default) | Alcance |
+|-------|------------------|---------|
+| `rate-limit-global` | 5000 req / 5 min / IP | Todo el tráfico al ALB |
+| `KnownBadInputs` (managed) | — | Exploits conocidos en query/body |
+
+Variables Terraform: `waf.enabled`, `waf.global_rate_limit`.
+
 ---
 
 ## 6. Feedback de corrección — estado
@@ -301,8 +312,7 @@ Panel único para demo TP4 (*funcionamiento en tiempo real*):
 | Mecanismo | Prioridad | Impacto |
 |-----------|-----------|---------|
 | **Rediseño DynamoDB analytics** | P1 | Consultas eficientes (feedback corrector) |
-| **Diagrama actualizado** | P1 | Reflejar DLQ, auto scaling, SNS, CloudWatch |
-| **WAF / rate limiting** | P2 | Protección endpoints públicos de eventos |
+| **Diagrama actualizado** | P1 | Reflejar DLQ, auto scaling, SNS, CloudWatch, WAF |
 
 ### Evolución en producción (no aplica al lab)
 
@@ -320,8 +330,7 @@ Panel único para demo TP4 (*funcionamiento en tiempo real*):
 Estos puntos están identificados pero **no forman parte de lo ya implementado**. Detalle y plan en [propuestas-mejoras.md](./propuestas-mejoras.md):
 
 - DynamoDB sin TTL ni GSI para consultas analíticas eficientes.
-- Endpoints públicos de eventos sin rate limiting (WAF).
-- Diagrama `Architecture.png` sin DLQ, auto scaling, SNS ni CloudWatch.
+- Diagrama `Architecture.png` sin DLQ, auto scaling, SNS, CloudWatch ni WAF.
 - Alarmas RDS CPU/storage no implementadas (ruido innecesario en lab).
 - X-Ray / Container Insights no implementados (fuera de alcance TP).
 

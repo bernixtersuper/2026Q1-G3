@@ -64,3 +64,16 @@ variable "ml_training" {
   })
 }
 
+variable "waf" {
+  type = object({
+    enabled           = optional(bool, true)
+    global_rate_limit = optional(number, 5000)
+  })
+  default = {
+    enabled           = true
+    global_rate_limit = 5000
+  }
+
+  description = "WAF regional en el ALB. global_rate_limit = requests por IP en ventana de 5 minutos."
+}
+
