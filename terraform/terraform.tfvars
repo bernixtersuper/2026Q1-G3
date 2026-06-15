@@ -26,3 +26,6 @@ ml_training = {
   schedule_enabled    = true
   sqs_batch_size      = 10
 }
+
+alert_email = "ctepedino@itba.edu.ar"
+

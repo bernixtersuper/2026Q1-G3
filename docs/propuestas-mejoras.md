@@ -24,17 +24,19 @@ Propuestas priorizadas para la entrega TP4 y evolución de la arquitectura, cons
 flowchart TB
   subgraph p1 [Prioridad 1 — TP4 y correcciones]
     A[Rediseño DynamoDB analytics]
-    B[DLQ + alarmas pipeline ML]
+    B[DLQ + alarma pipeline ML ✓]
     C[CORS restringido ✓]
     D[Actualizar diagrama]
   end
   subgraph p2 [Prioridad 2 — Seguridad y rubrica]
     F[WAF rate limiting básico]
-    G[Alarmas CloudWatch]
+    G[Alarmas CloudWatch ✓]
+    K[Log groups + dashboard ✓]
   end
   subgraph p3 [Prioridad 3 — Elasticidad y costo]
-    H[Auto Scaling ECS]
-    I[TTL DynamoDB]
+    H[Auto Scaling ECS ✓]
+    I[Circuit breaker ECS ✓]
+    J[TTL DynamoDB]
   end
   p1 --> p2 --> p3
 ```
@@ -168,55 +170,64 @@ Habilitar MFA opcional (TOTP) en el User Pool admin. Refuerza la narrativa de se
 
 ## C. Pipeline ML y elasticidad *(rubrica SQS 10% — Prioridad 1)*
 
-### C1. Dead Letter Queue (DLQ) ✅ Lab
+### C1. Dead Letter Queue (DLQ) ✅ Hecho
 
-```hcl
-# Propuesta terraform/lambdas.tf
-resource "aws_sqs_queue" "ml-training-dlq" { ... }
+Implementado en `terraform/lambdas.tf`:
 
-resource "aws_sqs_queue" "ml-training" {
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.ml-training-dlq.arn
-    maxReceiveCount     = 3
-  })
-}
-```
+- Cola `ml-training-dlq` (retención 14 días).
+- `redrive_policy` en `ml-training-queue` con `maxReceiveCount = 3` (configurable vía `ml_training.sqs_max_receive_count`).
 
-### C2. Alarmas CloudWatch ✅ Lab
+### C2. Alarmas CloudWatch ✅ Hecho (lab)
 
-| Alarma | Condición |
-|--------|-----------|
-| DLQ > 0 mensajes | Fallo persistente del worker |
-| Lambda worker errors | `Errors > 0` en 5 min |
-| SQS ApproximateAgeOfOldestMessage | Jobs estancados |
-| ALB TargetResponseTime / 5xx | Salud del backend |
-| RDS CPU / FreeStorageSpace | Capacidad DB |
+Implementado en `terraform/cloudwatch.tf`; todas publican en `{prefix}-alerts` (SNS):
+
+| Alarma | Condición | Estado |
+|--------|-----------|--------|
+| DLQ > 0 mensajes | Fallo persistente del worker | ✅ |
+| Lambda worker errors | `Errors > 0` en 5 min | ✅ |
+| Lambda orquestador errors | `Errors > 0` en 5 min | ✅ |
+| SQS ApproximateAgeOfOldestMessage | Solo dashboard (sin alarma) | ✅ métrica; ⏸️ alarma omitida — falsos positivos con N tenants |
+| ALB UnHealthyHostCount | Targets ECS caídos | ✅ |
+| ALB HTTPCode_Target_5XX_Count | Errores backend | ✅ |
+| RDS CPU / FreeStorageSpace | Capacidad DB | ⏸️ Omitido en lab (ruido) |
 
 ### C3. Visibility timeout
 
 Actual: 360s con Lambda timeout 300s — correcto. Documentar la relación en la defensa.
 
-### C4. SNS para notificación de fallos (opcional) ✅ Lab
+### C4. SNS para notificación de fallos ✅ Hecho
 
-SNS → email cuando DLQ recibe mensajes. Refuerza criterio “SQS **o** SNS” con ambos servicios.
+Implementado en `terraform/sns.tf`:
+
+- Tópico `{prefix}-alerts`.
+- Suscripción email vía variable `alert_email` (requiere confirmación manual tras `terraform apply`).
+- Alarma DLQ y el resto de alarmas operativas publican en `alarm_actions` y `ok_actions` del tópico SNS.
 
 ---
 
 ## D. Elasticidad y disponibilidad *(consigna TP4 — Prioridad 3)*
 
-### D1. Application Auto Scaling en ECS ✅ Lab
+### D1. Application Auto Scaling en ECS ✅ Hecho
 
-- Target tracking por CPU (ej. 70%) sobre el servicio Fargate.
-- Min: 2, Max: 4 (respetar presupuesto del lab).
+Implementado en `terraform/ecs.tf`:
+
+- Target tracking por CPU **70 %** (`backend.autoscaling_target_cpu`).
+- Min **2**, max **4** (`autoscaling_min` / `autoscaling_max`).
+- Cooldowns: scale-out 60 s, scale-in 300 s.
+- `lifecycle { ignore_changes = [desired_count] }` para no pisar el scaler.
 - **Narrativa TP1:** picos de almuerzo/cena justifican auto scaling.
 
-### D2. Circuit breaker en deploy ECS ✅ Lab
+### D2. Circuit breaker en deploy ECS ✅ Hecho
+
+Implementado en `terraform/ecs.tf`:
 
 ```hcl
 deployment_circuit_breaker {
   enable   = true
   rollback = true
 }
+deployment_minimum_healthy_percent = 100
+deployment_maximum_percent         = 200
 ```
 
 ### D3. NAT Gateway por AZ ✅ Hecho
@@ -241,13 +252,24 @@ Bucket privado con policy `DenyInsecureTransport`; API devuelve URLs prefirmadas
 
 ## F. Observabilidad y operaciones
 
-### F1. Log groups con retención ✅ Lab
+### F1. Log groups con retención ✅ Hecho
 
-Definir `aws_cloudwatch_log_group` para ECS y Lambdas (retención 7–14 días para ahorrar).
+Implementado en `terraform/cloudwatch.tf` y `terraform/modules/python-lambda/`:
 
-### F2. Dashboard CloudWatch ✅ Lab
+- ECS: `/ecs/{prefix}-backend` con driver `awslogs` en task definition.
+- Lambdas: `/aws/lambda/{prefix}-ml-*` con `logging_config`.
+- Retención configurable vía `log_retention_in_days` (default **14** días).
 
-Panel único: ALB, ECS, RDS, SQS, Lambdas. Útil para demo en vivo (rubrica “funcionamiento en tiempo real”).
+### F2. Dashboard CloudWatch ✅ Hecho
+
+Implementado en `terraform/cloudwatch.tf` — dashboard `{prefix}-operations`:
+
+- ALB (requests, latencia p95, 5xx, unhealthy hosts).
+- ECS (CPU, memoria).
+- SQS (cola ML, DLQ, edad del mensaje más viejo).
+- Lambda orquestador y worker (invocaciones, errores).
+
+Output: `cloudwatch_dashboard_url`. Útil para demo en vivo (rubrica “funcionamiento en tiempo real”).
 
 ### F3. X-Ray (opcional) ✅ Lab
 
@@ -291,17 +313,20 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 
 ## Matriz de priorización
 
-| ID | Propuesta | Impacto TP4 | Esfuerzo | Lab | Prioridad |
-|----|-----------|-------------|----------|-----|-----------|
-| A1–A4 | Rediseño DynamoDB analytics | Alto (corrección + funcionalidad) | Medio | ✅ | **P1** |
-| C1 | DLQ cola ML | Medio (SQS + operaciones) | Bajo | ✅ | **P1** |
-| H | Actualizar diagrama | Alto (10% rubrica) | Bajo | ✅ | **P1** |
-| C2 | Alarmas CloudWatch | Medio (demo en vivo) | Medio | ✅ | **P2** |
-| B2 | WAF rate limit | Medio (seguridad) | Medio | ⚠️ | **P2** |
-| D1 | Auto Scaling ECS | Alto (elasticidad consigna) | Medio | ✅ | **P2** |
-| D2 | Circuit breaker ECS | Medio (deploys) | Bajo | ✅ | **P2** |
-| G1 | TTL DynamoDB | Medio (costo + diseño) | Bajo | ✅ | **P2** |
-| B4 | MFA Cognito | Bajo-Medio | Bajo | ⚠️ | **P3** |
+| ID | Propuesta | Impacto TP4 | Esfuerzo | Lab | Prioridad | Estado |
+|----|-----------|-------------|----------|-----|-----------|--------|
+| A1–A4 | Rediseño DynamoDB analytics | Alto (corrección + funcionalidad) | Medio | ✅ | **P1** | ⏳ |
+| C1 | DLQ cola ML | Medio (SQS + operaciones) | Bajo | ✅ | **P1** | ✅ |
+| C4 | SNS alertas DLQ | Medio (rubrica SQS/SNS) | Bajo | ✅ | **P1** | ✅ |
+| H | Actualizar diagrama | Alto (10% rubrica) | Bajo | ✅ | **P1** | ⏳ |
+| C2 | Alarmas CloudWatch | Medio (demo en vivo) | Medio | ✅ | **P2** | ✅ |
+| F1 | Log groups | Medio (debug) | Bajo | ✅ | **P2** | ✅ |
+| F2 | Dashboard CloudWatch | Alto (demo TP4) | Medio | ✅ | **P2** | ✅ |
+| B2 | WAF rate limit | Medio (seguridad) | Medio | ⚠️ | **P2** | ⏳ |
+| D1 | Auto Scaling ECS | Alto (elasticidad consigna) | Medio | ✅ | **P2** | ✅ |
+| D2 | Circuit breaker ECS | Medio (deploys) | Bajo | ✅ | **P2** | ✅ |
+| G1 | TTL DynamoDB | Medio (costo + diseño) | Bajo | ✅ | **P2** | ⏳ |
+| B4 | MFA Cognito | Bajo-Medio | Bajo | ⚠️ | **P3** | ⏳ |
 
 ---
 
@@ -311,19 +336,22 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 
 1. Diseñar access patterns DynamoDB documentados.
 2. Implementar agregados o GSI mínima para dashboard.
-3. Agregar DLQ + alarma básica.
+3. ~~Agregar DLQ + alarma básica.~~ ✅ Hecho (jun 2026).
 4. Actualizar diagrama y este documento.
 
 ### Iteración 2 — Refuerzo rubrica TP4 (1–2 días)
 
-1. Auto Scaling ECS (demostrable en consola).
-2. Alarmas CloudWatch + dashboard.
-3. WAF/CORS como mitigaciones de seguridad en un entorno HTTP (HTTPS documentado solo como evolución post-lab).
+1. ~~Auto Scaling ECS (demostrable en consola).~~ ✅ Hecho (jun 2026).
+2. ~~Circuit breaker ECS.~~ ✅ Hecho (jun 2026).
+3. ~~SNS en fallos ML.~~ ✅ Hecho (jun 2026).
+4. ~~Alarmas CloudWatch + dashboard.~~ ✅ Hecho (jun 2026).
+5. WAF/CORS como mitigaciones de seguridad en un entorno HTTP (HTTPS documentado solo como evolución post-lab).
 
 ### Iteración 3 — Pulido (opcional)
 
-1. SNS en fallos ML.
-2. TTL DynamoDB.
+1. TTL DynamoDB.
+2. ~~Log groups con retención (F1).~~ ✅ Hecho (jun 2026).
+3. Actualizar `Architecture.png` (DLQ, auto scaling, SNS, CloudWatch).
 
 ---
 
@@ -332,8 +360,9 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 1. **Por qué DynamoDB para eventos y RDS para transaccional:** write-heavy, consultas por tenant, desacople del pipeline ML.
 2. **Por qué SQS entre orquestador y worker:** desacople, reintentos, batch con fallos parciales, elasticidad del entrenamiento.
 3. **Por qué Cognito:** PyMEs sin IdP propio; tokens estándar; integración SPA.
-4. **Trade-offs del lab:** `LabRole`, HTTP sin TLS — aceptados; **resiliencia** con Multi-AZ, NAT por AZ, 2 tareas ECS, SQS desacoplado (pendiente: DLQ, auto scaling, alarmas).
-5. **Roadmap analytics:** de eventos crudos a agregados precomputados (propuesta A).
+4. **Trade-offs del lab:** `LabRole`, HTTP sin TLS — aceptados; **resiliencia** con Multi-AZ, NAT por AZ, ECS auto scaling (2–4), circuit breaker, DLQ + SNS, SQS desacoplado.
+5. **Observabilidad:** logs centralizados (ECS + Lambda), 5 alarmas → SNS, dashboard `{prefix}-operations` (edad SQS solo visual, sin alarma).
+6. **Roadmap analytics:** de eventos crudos a agregados precomputados (propuesta A).
 
 ---
 

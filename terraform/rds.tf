@@ -85,8 +85,8 @@ resource "aws_db_instance" "db" {
   db_subnet_group_name   = module.vpc.database_subnet_group_name
   vpc_security_group_ids = [aws_security_group.db.id]
 
-  multi_az            = true
-  publicly_accessible = false
+  multi_az                  = true
+  publicly_accessible       = false
   skip_final_snapshot       = false
   final_snapshot_identifier = "${local.name_prefix}-postgres-final"
 

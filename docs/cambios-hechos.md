@@ -32,7 +32,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 |---------------|--------|-----------|
 | Diagrama fiel a la implementación | ✅ | `Architecture.png` + Terraform en `terraform/` |
 | Implementación completa de componentes propuestos | ✅ | VPC, ECS, RDS, DynamoDB, S3, Cognito, Lambda, SQS, EventBridge |
-| Elasticidad / desacople (SQS o SNS) | ✅ | Cola `ml-training-queue` → Lambda worker |
+| Elasticidad / desacople (SQS o SNS) | ✅ | Cola `ml-training-queue` + DLQ → Lambda worker; tópico SNS `{prefix}-alerts` para alarmas operativas |
 | Autenticación con Cognito | ✅ | User Pool + client SPA admin; JWT en endpoints `/api/admin/*` |
 | Terraform | ✅ | Infraestructura principal en Terraform (evaluado en entrega 3) |
 
@@ -43,8 +43,8 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 | Teoría Cloud / Presentación (40%) | Arquitectura multi-tier, servicios managed, justificación documentada en README |
 | Diagrama (10%) | Diagrama actualizado con VPC, AZs, endpoints, pipeline ML |
 | Cognito y Seguridad (20%) | Cognito + JWT; RDS privado + Secrets Manager + RDS Proxy TLS; buckets privados |
-| Buen uso de SQS/SNS (10%) | SQS con batch failures parciales; orquestador desacoplado del worker |
-| Calidad y completitud (20%) | Flujo funcional admin → menú → eventos → analytics → ML |
+| Buen uso de SQS/SNS (10%) | SQS con batch failures parciales, DLQ (`maxReceiveCount=3`) y redrive; SNS + email en fallos persistentes del pipeline ML |
+| Calidad y completitud (20%) | Flujo funcional admin → menú → eventos → analytics → ML; dashboard CloudWatch `{prefix}-operations` para demo en vivo |
 
 ---
 
@@ -54,7 +54,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 
 - **VPC** `172.30.0.0/16` con 2 AZs: subnets públicas, privadas (app) y de datos.
 - **NAT Gateway** uno por AZ (`one_nat_gateway_per_az = true`) para salida HA desde subnets privadas.
-- **ALB** público → **ECS Fargate** (2 tareas, puerto 8080) en subnets privadas.
+- **ALB** público → **ECS Fargate** (2–4 tareas vía auto scaling, puerto 8080) en subnets privadas.
 - **VPC Endpoints**: S3 y DynamoDB (gateway); Secrets Manager, SQS, ECR API/DKR (interface).
 
 ### Datos
@@ -67,8 +67,12 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 
 ### Integración y ML
 
-- **EventBridge** (cron diario) → **Lambda orquestador** (VPC) → encola jobs en **SQS**.
+- **EventBridge** (cron diario) → **Lambda orquestador** (VPC) → encola jobs en **SQS** (`ml-training-queue`).
 - **Lambda worker** (sin VPC) consume SQS, agrega eventos DynamoDB y sube artefacto MREC a S3.
+- **DLQ** `ml-training-dlq` (retención 14 días) recibe mensajes tras 3 recepciones fallidas (`redrive_policy`).
+- **CloudWatch + SNS**: 5 alarmas operativas → tópico `{prefix}-alerts` → email (`alert_email` en tfvars).
+- **CloudWatch Logs**: log groups ECS + Lambdas (retención 14 días); driver `awslogs` en Fargate.
+- **Dashboard CloudWatch** `{prefix}-operations`: ALB, ECS, SQS y Lambdas en un solo panel.
 - **ECR** para imágenes del backend; scan on push; lifecycle policy (conserva las 10 imágenes más recientes).
 
 ### Seguridad e identidad
@@ -132,6 +136,88 @@ Atributos: `eventType`, `sessionId`, `itemId`, `sectionId`, `metadata`, `timesta
 
 - Orquestador lista tenants desde PostgreSQL y encola un mensaje SQS por tenant/día.
 - Worker agrega `ITEM_VIEW` del día en DynamoDB y genera `recommendations/{tenantId}/model.bin`.
+- Mensajes que fallan tras **3 intentos** van a **`ml-training-dlq`** (detalle en §5.1).
+
+---
+
+## 5.1. Mejoras de resiliencia, elasticidad y operaciones *(junio 2026)*
+
+### ECS — circuit breaker y auto scaling
+
+**Archivos:** `terraform/ecs.tf`, `terraform/variables.tf`, `terraform/terraform.tfvars`
+
+| Componente | Configuración | Efecto |
+|------------|---------------|--------|
+| **Deployment circuit breaker** | `enable = true`, `rollback = true` | Deploy con imagen rota revierte automáticamente a la revisión anterior |
+| **Rolling deploy** | `minimum_healthy_percent = 100`, `maximum_percent = 200` | Siempre ≥2 tareas sanas durante el deploy |
+| **Application Auto Scaling** | Target tracking CPU 70 % | Escala de **2 a 4** tareas Fargate según carga |
+| **Cooldowns** | scale-out 60 s, scale-in 300 s | Evita oscilación rápida del desired count |
+| **Terraform lifecycle** | `ignore_changes = [desired_count]` | Auto scaling ajusta el count sin que Terraform lo sobrescriba |
+
+**Narrativa TP1:** picos de almuerzo/cena justifican escalar el API; en lab el techo es 4 tareas por presupuesto.
+
+### Pipeline ML — DLQ, alarma y SNS
+
+**Archivos:** `terraform/lambdas.tf`, `terraform/sns.tf`, `terraform/variables.tf`
+
+| Componente | Configuración | Efecto |
+|------------|---------------|--------|
+| **Cola principal** | `ml-training-queue`, visibility 360 s | Jobs de entrenamiento por tenant |
+| **DLQ** | `ml-training-dlq`, retención 14 días | Jobs irrecuperables quedan para inspección manual |
+| **Redrive policy** | `maxReceiveCount = 3` (variable `sqs_max_receive_count`) | Tras 3 fallos del worker → DLQ |
+| **Alarma CloudWatch** | `ApproximateNumberOfMessagesVisible > 0` en DLQ | Estado ALARM cuando hay mensajes fallidos |
+| **SNS** | Tópico `{prefix}-alerts` | Canal de notificación operativa |
+| **Suscripción email** | Variable `alert_email` en `terraform.tfvars` | Email al entrar/salir de ALARM (requiere confirmación AWS) |
+
+**Flujo de fallo:**
+
+```
+Worker error → batchItemFailures → reintento SQS
+       ×3 → ml-training-dlq → CloudWatch ALARM → SNS → email
+```
+
+**Outputs Terraform:** `ml_training_queue_url`, `ml_training_dlq_url`, `alerts_sns_topic_arn`, `cloudwatch_dashboard_url`.
+
+### Observabilidad — logs, alarmas y dashboard
+
+**Archivos:** `terraform/cloudwatch.tf`, `terraform/ecs.tf`, `terraform/modules/python-lambda/`, `terraform/sns.tf`
+
+#### Log groups (retención configurable, default 14 días)
+
+| Recurso | Log group | Notas |
+|---------|-----------|-------|
+| ECS backend | `/ecs/{prefix}-backend` | Driver `awslogs` en task definition |
+| Lambda orquestador | `/aws/lambda/{prefix}-ml-orchestrator` | `logging_config` en módulo Lambda |
+| Lambda worker | `/aws/lambda/{prefix}-ml-worker` | Idem |
+
+Variable: `log_retention_in_days` (default **14**).
+
+#### Alarmas CloudWatch → SNS
+
+Todas publican en `{prefix}-alerts` (`alarm_actions` + `ok_actions`):
+
+| Alarma | Condición | Propósito |
+|--------|-----------|-----------|
+| `ml-training-dlq-messages` | DLQ > 0 mensajes | Fallo persistente del worker |
+| `alb-unhealthy-hosts` | `UnHealthyHostCount > 0` | Targets ECS caídos |
+| `alb-target-5xx` | 5xx > 0 (5 min) | Errores en Quarkus |
+| `ml-worker-errors` | Lambda worker `Errors > 0` | Fallo antes de llegar a DLQ |
+| `ml-orchestrator-errors` | Lambda orquestador `Errors > 0` | Fallo al encolar jobs |
+
+> **Nota:** no hay alarma por edad del mensaje en la cola principal (`ApproximateAgeOfOldestMessage`). Con muchos tenants el job más viejo puede superar fácilmente 10 min mientras el worker procesa en serie; la métrica sigue visible en el dashboard. Fallos reales los cubren DLQ + alarmas de errores Lambda.
+
+#### Dashboard `{prefix}-operations`
+
+Panel único para demo TP4 (*funcionamiento en tiempo real*):
+
+- **ALB:** requests, latencia p95, 5xx y unhealthy hosts.
+- **ECS:** CPU y memoria del servicio backend.
+- **SQS:** mensajes visibles (cola + DLQ) y edad del mensaje más viejo.
+- **Lambda:** invocaciones y errores (orquestador + worker).
+
+**Outputs adicionales:** `cloudwatch_dashboard_name`, `cloudwatch_dashboard_url`, `ecs_backend_log_group`.
+
+**Nota post-deploy:** confirmar suscripción SNS del email en `alert_email`. Si las Lambdas ya existían, puede ser necesario `terraform import` de los log groups preexistentes.
 
 ---
 
@@ -181,7 +267,13 @@ Atributos: `eventType`, `sessionId`, `itemId`, `sectionId`, `metadata`, `timesta
 | Mecanismo | Dónde | Efecto |
 |-----------|-------|--------|
 | **2 Availability Zones** | VPC, subnets, ALB | Compute y balanceo distribuidos |
-| **ECS Fargate × 2 tareas** | `desired_count = 2` | Backend sobrevive caída de una tarea |
+| **ECS Fargate × 2–4 tareas** | Application Auto Scaling (CPU 70 %) | Backend escala en picos; mínimo 2 para HA |
+| **Deployment circuit breaker** | `terraform/ecs.tf` | Rollback automático de deploys rotos |
+| **DLQ pipeline ML** | `ml-training-dlq` + redrive | Jobs fallidos no se pierden en silencio |
+| **Alarma DLQ + SNS** | CloudWatch → `{prefix}-alerts` → email | Notificación operativa de fallos persistentes del worker |
+| **Alarmas ALB / Lambda** | `terraform/cloudwatch.tf` | 4 alarmas (5xx, unhealthy, errors orquestador/worker) |
+| **Log groups** | ECS + Lambdas, retención 14 d | Logs centralizados; stdout Quarkus en CloudWatch |
+| **Dashboard operaciones** | `{prefix}-operations` | Demo en vivo: carga, auto scaling, pipeline ML |
 | **ALB health checks** | `/q/health/ready` | Tráfico solo a tareas sanas |
 | **RDS PostgreSQL Multi-AZ** | `multi_az = true` | Failover automático de BD |
 | **RDS Proxy** | Entre ECS/Lambda y RDS | Pooling; menos agotamiento de conexiones |
@@ -196,15 +288,15 @@ Atributos: `eventType`, `sessionId`, `itemId`, `sectionId`, `metadata`, `timesta
 
 | Mecanismo | Prioridad | Impacto |
 |-----------|-----------|---------|
-| **DLQ** cola ML | P1 | No perder jobs fallidos en silencio |
-| **Alarmas CloudWatch** | P2 | Detectar fallos del pipeline y 5xx en ALB |
-| **Auto Scaling ECS** | P2 | Elasticidad en picos (consigna TP4) |
-| **Circuit breaker** en deploy ECS | P2 | Rollback automático de deploys rotos |
+| **Rediseño DynamoDB analytics** | P1 | Consultas eficientes (feedback corrector) |
+| **Diagrama actualizado** | P1 | Reflejar DLQ, auto scaling, SNS, CloudWatch |
+| **WAF / rate limiting** | P2 | Protección endpoints públicos de eventos |
 
 ### Evolución en producción (no aplica al lab)
 
 - Auto Scaling con techo mayor + métricas custom (RPS)
 - Interface endpoints adicionales (`logs`, `cognito-idp`)
+- Alarmas RDS CPU/storage, Container Insights, X-Ray
 - Multi-región / DR (fuera de alcance TP)
 
 **Para la defensa TP4:** distinguir *“qué resiliencia tenemos hoy”* vs *“qué haríamos con presupuesto prod”*.
@@ -215,12 +307,11 @@ Atributos: `eventType`, `sessionId`, `itemId`, `sectionId`, `metadata`, `timesta
 
 Estos puntos están identificados pero **no forman parte de lo ya implementado**. Detalle y plan en [propuestas-mejoras.md](./propuestas-mejoras.md):
 
-- Sin DLQ en la cola ML.
-- Sin auto scaling en ECS.
-- Sin circuit breaker en deploy ECS.
-- Sin alarmas CloudWatch declaradas en Terraform.
 - DynamoDB sin TTL ni GSI para consultas analíticas eficientes.
-- Endpoints públicos de eventos sin rate limiting.
+- Endpoints públicos de eventos sin rate limiting (WAF).
+- Diagrama `Architecture.png` sin DLQ, auto scaling, SNS ni CloudWatch.
+- Alarmas RDS CPU/storage no implementadas (ruido innecesario en lab).
+- X-Ray / Container Insights no implementados (fuera de alcance TP).
 
 ---
 

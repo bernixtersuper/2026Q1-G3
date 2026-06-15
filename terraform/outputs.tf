@@ -46,6 +46,30 @@ output "backend_ml_s3_bucket" {
   value = local.ml_bucket_name
 }
 
+output "ml_training_queue_url" {
+  value = aws_sqs_queue.ml-training.url
+}
+
+output "ml_training_dlq_url" {
+  value = aws_sqs_queue.ml-training-dlq.url
+}
+
+output "alerts_sns_topic_arn" {
+  value = aws_sns_topic.alerts.arn
+}
+
+output "cloudwatch_dashboard_name" {
+  value = aws_cloudwatch_dashboard.operations.dashboard_name
+}
+
+output "cloudwatch_dashboard_url" {
+  value = "https://${data.aws_region.current.region}.console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.operations.dashboard_name}"
+}
+
+output "ecs_backend_log_group" {
+  value = aws_cloudwatch_log_group.ecs_backend.name
+}
+
 output "cognito_user_pool_id" {
   value = aws_cognito_user_pool.main.id
 }

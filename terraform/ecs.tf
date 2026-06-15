@@ -45,6 +45,15 @@ resource "aws_ecs_task_definition" "backend" {
       protocol      = "tcp"
     }]
 
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.ecs_backend.name
+        "awslogs-region"        = data.aws_region.current.region
+        "awslogs-stream-prefix" = "backend"
+      }
+    }
+
     environment = [
       { name = "DB_URL", value = local.db_jdbc_url },
       { name = "DB_SECRET_ARN", value = aws_db_instance.db.master_user_secret[0].secret_arn },
@@ -60,6 +69,8 @@ resource "aws_ecs_task_definition" "backend" {
       { name = "S3_PRESIGN_TTL_SECONDS", value = "3600" },
     ]
   }])
+
+  depends_on = [aws_cloudwatch_log_group.ecs_backend]
 }
 
 resource "aws_ecs_service" "backend" {

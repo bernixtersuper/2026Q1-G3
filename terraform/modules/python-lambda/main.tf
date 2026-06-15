@@ -8,6 +8,11 @@ data "archive_file" "lambda_zip" {
   output_path = local.filename
 }
 
+resource "aws_cloudwatch_log_group" "this" {
+  name              = "/aws/lambda/${var.function_name}"
+  retention_in_days = var.log_retention_in_days
+}
+
 resource "aws_lambda_function" "this" {
   function_name = var.function_name
   role          = var.iam_role_arn
@@ -20,6 +25,11 @@ resource "aws_lambda_function" "this" {
 
   timeout = var.timeout
 
+  logging_config {
+    log_format = "Text"
+    log_group  = aws_cloudwatch_log_group.this.name
+  }
+
   dynamic "vpc_config" {
     for_each = var.vpc_subnet_ids != null ? [1] : []
     content {
@@ -31,4 +41,6 @@ resource "aws_lambda_function" "this" {
   environment {
     variables = var.environment_variables
   }
+
+  depends_on = [aws_cloudwatch_log_group.this]
 }

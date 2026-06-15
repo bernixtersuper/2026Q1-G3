@@ -42,11 +42,25 @@ variable "backend" {
   }
 }
 
+variable "alert_email" {
+  type        = string
+  default     = null
+  nullable    = true
+  description = "Email para alertas operativas (DLQ, etc.). Requiere confirmar la suscripción SNS desde el correo."
+}
+
+variable "log_retention_in_days" {
+  type        = number
+  default     = 14
+  description = "Retención de log groups CloudWatch (ECS y Lambdas)."
+}
+
 variable "ml_training" {
   type = object({
-    schedule_expression = string
-    schedule_enabled    = bool
-    sqs_batch_size      = number
+    schedule_expression         = string
+    schedule_enabled            = bool
+    sqs_batch_size              = number
+    sqs_max_receive_count = optional(number, 3)
   })
 }
 

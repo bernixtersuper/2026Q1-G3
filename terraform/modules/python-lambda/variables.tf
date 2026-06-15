@@ -38,3 +38,8 @@ variable "vpc_security_group_ids" {
   type    = list(string)
   default = null
 }
+
+variable "log_retention_in_days" {
+  type    = number
+  default = 14
+}
