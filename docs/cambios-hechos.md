@@ -53,7 +53,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 ### Red y compute
 
 - **VPC** `172.30.0.0/16` con 2 AZs: subnets públicas, privadas (app) y de datos.
-- **NAT Gateway** único (`single_nat_gateway = true`) para salida desde subnets privadas.
+- **NAT Gateway** uno por AZ (`one_nat_gateway_per_az = true`) para salida HA desde subnets privadas.
 - **ALB** público → **ECS Fargate** (2 tareas, puerto 8080) en subnets privadas.
 - **VPC Endpoints**: S3 y DynamoDB (gateway); Secrets Manager, SQS, ECR API/DKR (interface).
 
@@ -69,7 +69,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 
 - **EventBridge** (cron diario) → **Lambda orquestador** (VPC) → encola jobs en **SQS**.
 - **Lambda worker** (sin VPC) consume SQS, agrega eventos DynamoDB y sube artefacto MREC a S3.
-- **ECR** para imágenes del backend; scan on push habilitado.
+- **ECR** para imágenes del backend; scan on push; lifecycle policy (conserva las 10 imágenes más recientes).
 
 ### Seguridad e identidad
 
@@ -174,19 +174,57 @@ Atributos: `eventType`, `sessionId`, `itemId`, `sectionId`, `metadata`, `timesta
 
 ---
 
-## 8. Deuda técnica conocida (registrada, no resuelta aún)
+## 8. Resiliencia — estado actual
+
+### Ya implementado
+
+| Mecanismo | Dónde | Efecto |
+|-----------|-------|--------|
+| **2 Availability Zones** | VPC, subnets, ALB | Compute y balanceo distribuidos |
+| **ECS Fargate × 2 tareas** | `desired_count = 2` | Backend sobrevive caída de una tarea |
+| **ALB health checks** | `/q/health/ready` | Tráfico solo a tareas sanas |
+| **RDS PostgreSQL Multi-AZ** | `multi_az = true` | Failover automático de BD |
+| **RDS Proxy** | Entre ECS/Lambda y RDS | Pooling; menos agotamiento de conexiones |
+| **Backups RDS** | `backup_retention_period = 7` | Point-in-time recovery operativo |
+| **Snapshot final en destroy** | `skip_final_snapshot = false` | Respaldo al destruir infra |
+| **SQS + worker desacoplado** | Pipeline ML | Fallos parciales no bloquean el cron entero |
+| **`ReportBatchItemFailures`** | Lambda worker | Reintentos por mensaje, no por lote entero |
+| **NAT Gateway × AZ** | `one_nat_gateway_per_az = true` | Salida a internet sin SPOF por zona |
+| **VPC endpoints** | S3, DynamoDB, ECR, Secrets, SQS | Tráfico AWS sin depender del NAT |
+
+### Pendiente (mejora real de resiliencia — ver propuestas)
+
+| Mecanismo | Prioridad | Impacto |
+|-----------|-----------|---------|
+| **DLQ** cola ML | P1 | No perder jobs fallidos en silencio |
+| **Alarmas CloudWatch** | P2 | Detectar fallos del pipeline y 5xx en ALB |
+| **Auto Scaling ECS** | P2 | Elasticidad en picos (consigna TP4) |
+| **Circuit breaker** en deploy ECS | P2 | Rollback automático de deploys rotos |
+
+### Evolución en producción (no aplica al lab)
+
+- Auto Scaling con techo mayor + métricas custom (RPS)
+- Interface endpoints adicionales (`logs`, `cognito-idp`)
+- Multi-región / DR (fuera de alcance TP)
+
+**Para la defensa TP4:** distinguir *“qué resiliencia tenemos hoy”* vs *“qué haríamos con presupuesto prod”*.
+
+---
+
+## 9. Deuda técnica conocida (registrada, no resuelta aún)
 
 Estos puntos están identificados pero **no forman parte de lo ya implementado**. Detalle y plan en [propuestas-mejoras.md](./propuestas-mejoras.md):
 
 - Sin DLQ en la cola ML.
 - Sin auto scaling en ECS.
-- NAT Gateway único (SPOF de salida).
+- Sin circuit breaker en deploy ECS.
+- Sin alarmas CloudWatch declaradas en Terraform.
 - DynamoDB sin TTL ni GSI para consultas analíticas eficientes.
 - Endpoints públicos de eventos sin rate limiting.
 
 ---
 
-## 9. Referencias
+## 10. Referencias
 
 - Propuesta original: [propuestaTP1.txt](./propuestaTP1.txt)
 - Consigna y rubrica TP4: [ConsignaTP4.txt](./ConsignaTP4.txt)

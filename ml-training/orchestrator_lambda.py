@@ -108,6 +108,9 @@ def _postgres_connect_kwargs() -> dict[str, Any] | None:
     }
     if sslmode:
         out["sslmode"] = sslmode
+    else:
+        # RDS Proxy (require_tls=true): TLS explícito; evita depender del default libpq (prefer).
+        out["sslmode"] = "require"
     return out
 
 

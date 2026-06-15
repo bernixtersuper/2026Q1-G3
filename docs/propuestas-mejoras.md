@@ -35,7 +35,6 @@ flowchart TB
   subgraph p3 [Prioridad 3 — Elasticidad y costo]
     H[Auto Scaling ECS]
     I[TTL DynamoDB]
-    J[Lifecycle ECR]
   end
   p1 --> p2 --> p3
 ```
@@ -220,13 +219,11 @@ deployment_circuit_breaker {
 }
 ```
 
-### D3. NAT Gateway ⚠️ Lab — costo
+### D3. NAT Gateway por AZ ✅ Hecho
 
-- **Actual:** single NAT (~USD 32/mes + tráfico; ver estimación del lab).
-- **Mejora HA:** NAT por AZ — duplica costo.
-- **Alternativa económica:** más VPC endpoints (`logs`, `monitoring`) para reducir tráfico por NAT.
+Implementado en `terraform/vpc.tf`: `single_nat_gateway = false`, `one_nat_gateway_per_az = true` (2 NAT en 2 AZ).
 
-Recomendación lab: mantener single NAT y justificar trade-off costo vs HA.
+**Coste lab:** ~USD 32/mes × AZ (~USD 64/mes total). El tráfico principal a S3/DynamoDB/ECR/Secrets/SQS sigue yendo por VPC endpoints; cada AZ tiene salida propia para Cognito JWKS y resto puntual.
 
 ---
 
@@ -267,9 +264,9 @@ Trazas en API Quarkus para mostrar latencia DynamoDB + RDS en la defensa.
 
 Controla costo y cumple con analytics reciente de TP1.
 
-### G2. Lifecycle policy en ECR ✅ Lab
+### G2. Lifecycle policy en ECR ✅ Hecho
 
-Retener últimas N imágenes; evitar acumulación con tag `latest`.
+`aws_ecr_lifecycle_policy.backend`: expira imágenes cuando hay más de **10** (`imageCountMoreThan`, `tagStatus: any`).
 
 ### G3. Point-in-time recovery DynamoDB ⚠️ Lab
 
@@ -302,8 +299,8 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 | C2 | Alarmas CloudWatch | Medio (demo en vivo) | Medio | ✅ | **P2** |
 | B2 | WAF rate limit | Medio (seguridad) | Medio | ⚠️ | **P2** |
 | D1 | Auto Scaling ECS | Alto (elasticidad consigna) | Medio | ✅ | **P2** |
+| D2 | Circuit breaker ECS | Medio (deploys) | Bajo | ✅ | **P2** |
 | G1 | TTL DynamoDB | Medio (costo + diseño) | Bajo | ✅ | **P2** |
-| D3 | NAT por AZ | Bajo en lab | Alto costo | ⚠️ | **P3** |
 | B4 | MFA Cognito | Bajo-Medio | Bajo | ⚠️ | **P3** |
 
 ---
@@ -326,7 +323,7 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 ### Iteración 3 — Pulido (opcional)
 
 1. SNS en fallos ML.
-2. TTL y lifecycle policies.
+2. TTL DynamoDB.
 
 ---
 
@@ -335,7 +332,7 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 1. **Por qué DynamoDB para eventos y RDS para transaccional:** write-heavy, consultas por tenant, desacople del pipeline ML.
 2. **Por qué SQS entre orquestador y worker:** desacople, reintentos, batch con fallos parciales, elasticidad del entrenamiento.
 3. **Por qué Cognito:** PyMEs sin IdP propio; tokens estándar; integración SPA.
-4. **Trade-offs del lab:** `LabRole` obligatorio (sin IAM custom), HTTP sin TLS (sin dominio ni CloudFront), NAT único — restricciones del entorno AWS Academy, no omisiones del diseño.
+4. **Trade-offs del lab:** `LabRole`, HTTP sin TLS — aceptados; **resiliencia** con Multi-AZ, NAT por AZ, 2 tareas ECS, SQS desacoplado (pendiente: DLQ, auto scaling, alarmas).
 5. **Roadmap analytics:** de eventos crudos a agregados precomputados (propuesta A).
 
 ---
