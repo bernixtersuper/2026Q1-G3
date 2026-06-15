@@ -8,6 +8,11 @@ import {
   signOut as amplifySignOut,
   fetchAuthSession,
   autoSignIn,
+  confirmSignIn,
+  setUpTOTP,
+  verifyTOTPSetup,
+  updateMFAPreference,
+  fetchMFAPreference,
   type SignInOutput,
 } from 'aws-amplify/auth';
 import { jwtDecode } from 'jwt-decode';
@@ -125,4 +130,30 @@ export async function getCurrentTokens(): Promise<CognitoTokens | null> {
 
 export async function signOutEverywhere() {
   await amplifySignOut();
+}
+
+export type TotpMfaStatus = 'disabled' | 'enabled';
+
+export async function getTotpMfaStatus(): Promise<TotpMfaStatus> {
+  const pref = await fetchMFAPreference();
+  return pref.enabled?.includes('TOTP') ? 'enabled' : 'disabled';
+}
+
+/** URI otpauth:// para QR de enrolamiento TOTP (usuario autenticado). */
+export async function beginTotpSetup(): Promise<string> {
+  const details = await setUpTOTP();
+  return details.getSetupUri('MenuQR Admin').toString();
+}
+
+export async function verifyAndEnableTotp(code: string): Promise<void> {
+  await verifyTOTPSetup({ code: code.trim() });
+  await updateMFAPreference({ totp: 'PREFERRED' });
+}
+
+export async function disableTotpMfa(): Promise<void> {
+  await updateMFAPreference({ totp: 'DISABLED' });
+}
+
+export async function confirmSignInWithTotp(code: string): Promise<SignInOutput> {
+  return confirmSignIn({ challengeResponse: code.trim() });
 }

@@ -42,7 +42,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 |-----------------|------------------|
 | Teoría Cloud / Presentación (40%) | Arquitectura multi-tier, servicios managed, justificación documentada en README |
 | Diagrama (10%) | Diagrama actualizado con VPC, AZs, endpoints, pipeline ML |
-| Cognito y Seguridad (20%) | Cognito + JWT; RDS privado + Secrets Manager + RDS Proxy TLS; buckets privados |
+| Cognito y Seguridad (20%) | Cognito + JWT; MFA TOTP optional por usuario; RDS privado + Secrets Manager + RDS Proxy TLS; buckets privados |
 | Buen uso de SQS/SNS (10%) | SQS con batch failures parciales, DLQ (`maxReceiveCount=3`) y redrive; SNS + email en fallos persistentes del pipeline ML |
 | Calidad y completitud (20%) | Flujo funcional admin → menú → eventos → analytics → ML; dashboard CloudWatch `{prefix}-operations` para demo en vivo |
 
@@ -77,7 +77,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 
 ### Seguridad e identidad
 
-- **Cognito User Pool**: email/password, política de contraseñas, tokens con expiración configurada.
+- **Cognito User Pool**: email/password, política de contraseñas, **MFA TOTP opcional** (default desactivado), tokens con expiración configurada.
 - **LabRole** (AWS Academy): rol único para ECS, Lambda y RDS Proxy (restricción del lab).
 - Security groups con reglas explícitas ALB → Fargate → Proxy → RDS.
 
@@ -94,6 +94,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 ### Backend (Quarkus)
 
 - Autenticación admin vía **Cognito access token** (`@Authenticated` en recursos admin).
+- **MFA TOTP opcional** (Google Authenticator / Authy): cada usuario lo activa en **Admin → Security**; login pide código solo si está habilitado.
 - Bootstrap de sesión con **ID token** verificado (`/api/auth/session`).
 - **Multi-tenancy** resuelto en `TenantRequestFilter` a partir del `sub` de Cognito.
 - Imágenes en bucket S3 **privado** (sin acceso público); lectura vía **URLs prefirmadas** (TTL 1 h). Eliminado el proxy público `/api/media`.
@@ -218,6 +219,17 @@ Panel único para demo TP4 (*funcionamiento en tiempo real*):
 **Outputs adicionales:** `cloudwatch_dashboard_name`, `cloudwatch_dashboard_url`, `ecs_backend_log_group`.
 
 **Nota post-deploy:** confirmar suscripción SNS del email en `alert_email`. Si las Lambdas ya existían, puede ser necesario `terraform import` de los log groups preexistentes.
+
+### Cognito — MFA TOTP opcional
+
+**Archivos:** `terraform/cognito.tf`, `frontend/admin/src/auth/cognito.ts`, `SecurityPage.tsx`, `LoginPage.tsx`
+
+| Componente | Configuración | Efecto |
+|------------|---------------|--------|
+| **User Pool** | `mfa_configuration = "OPTIONAL"` + `software_token_mfa_configuration` | TOTP disponible; **no obligatorio** |
+| **Enrolamiento** | Admin → Security → QR + código de verificación | Solo quien lo activa usa MFA |
+| **Login** | Paso `CONFIRM_SIGN_IN_WITH_TOTP_CODE` | Código de 6 dígitos tras password si MFA activo |
+| **Desactivar** | Security → Disable authenticator | Vuelve a solo email + password |
 
 ---
 

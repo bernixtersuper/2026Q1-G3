@@ -162,9 +162,14 @@ Alternativas graduales:
 2. Token anónimo firmado (HMAC) emitido al cargar el menú, validado al postear eventos.
 3. Throttling por `sessionId` + `slug` en backend (sin infra extra).
 
-### B4. MFA en Cognito ⚠️ Lab
+### B4. MFA TOTP opcional en Cognito ✅ Hecho
 
-Habilitar MFA opcional (TOTP) en el User Pool admin. Refuerza la narrativa de seguridad multi-tenant.
+Implementado en `terraform/cognito.tf` y admin SPA:
+
+- User Pool: `mfa_configuration = "OPTIONAL"` + TOTP software token.
+- **Default:** MFA desactivado para todos los usuarios nuevos.
+- **Admin → Security:** enrolamiento con QR (`qrcode.react`) + verificación; desactivación explícita.
+- **Login:** maneja `CONFIRM_SIGN_IN_WITH_TOTP_CODE` cuando el usuario tiene MFA activo.
 
 ---
 
@@ -326,7 +331,7 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 | D1 | Auto Scaling ECS | Alto (elasticidad consigna) | Medio | ✅ | **P2** | ✅ |
 | D2 | Circuit breaker ECS | Medio (deploys) | Bajo | ✅ | **P2** | ✅ |
 | G1 | TTL DynamoDB | Medio (costo + diseño) | Bajo | ✅ | **P2** | ⏳ |
-| B4 | MFA Cognito | Bajo-Medio | Bajo | ⚠️ | **P3** | ⏳ |
+| B4 | MFA TOTP Cognito (optional) | Medio (seguridad admin) | Medio | ✅ | **P2** | ✅ |
 
 ---
 
@@ -359,7 +364,7 @@ Actualizar `Architecture.png` si se implementa alguna propuesta:
 
 1. **Por qué DynamoDB para eventos y RDS para transaccional:** write-heavy, consultas por tenant, desacople del pipeline ML.
 2. **Por qué SQS entre orquestador y worker:** desacople, reintentos, batch con fallos parciales, elasticidad del entrenamiento.
-3. **Por qué Cognito:** PyMEs sin IdP propio; tokens estándar; integración SPA.
+3. **Por qué Cognito:** PyMEs sin IdP propio; tokens estándar; integración SPA; MFA TOTP **opcional** por usuario en Security.
 4. **Trade-offs del lab:** `LabRole`, HTTP sin TLS — aceptados; **resiliencia** con Multi-AZ, NAT por AZ, ECS auto scaling (2–4), circuit breaker, DLQ + SNS, SQS desacoplado.
 5. **Observabilidad:** logs centralizados (ECS + Lambda), 5 alarmas → SNS, dashboard `{prefix}-operations` (edad SQS solo visual, sin alarma).
 6. **Roadmap analytics:** de eventos crudos a agregados precomputados (propuesta A).

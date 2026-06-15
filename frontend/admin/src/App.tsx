@@ -9,6 +9,7 @@ import { AnalyticsPage } from './analytics/AnalyticsPage';
 import { TablesPage } from './tables/TablesPage';
 import { OrdersPage } from './orders/OrdersPage';
 import { ThemePage } from './theme/ThemePage';
+import { SecurityPage } from './auth/SecurityPage';
 import { AppShell } from './shared/components/AppShell';
 import { ProtectedRoute } from './shared/components/ProtectedRoute';
 import { Toaster } from './components/ui/toaster';
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="tables" element={<TablesPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="theme" element={<ThemePage />} />
+          <Route path="security" element={<SecurityPage />} />
         </Route>
         <Route path="/" element={<Navigate to="/admin" replace />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />

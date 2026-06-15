@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 interface OtpCodeFieldProps {
   id: string;
   label?: string;
+  hint?: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -14,6 +15,7 @@ interface OtpCodeFieldProps {
 export function OtpCodeField({
   id,
   label = 'Verification code',
+  hint,
   value,
   onChange,
   disabled,
@@ -37,7 +39,7 @@ export function OtpCodeField({
         )}
       />
       <p className="text-xs text-muted-foreground text-center">
-        Enter the {maxLength}-digit code from your email
+        {hint ?? `Enter the ${maxLength}-digit code from your email`}
       </p>
     </div>
   );
