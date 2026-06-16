@@ -4,11 +4,13 @@ import { SignUpPage } from './auth/SignUpPage';
 import { ConfirmSignUpPage } from './auth/ConfirmSignUpPage';
 import { ForgotPasswordPage } from './auth/ForgotPasswordPage';
 import { RegisterPage } from './auth/RegisterPage';
+import { AuthCallbackPage } from './auth/AuthCallbackPage';
 import { MenuPage } from './menu/MenuPage';
 import { AnalyticsPage } from './analytics/AnalyticsPage';
 import { TablesPage } from './tables/TablesPage';
 import { OrdersPage } from './orders/OrdersPage';
 import { ThemePage } from './theme/ThemePage';
+import { SecurityPage } from './auth/SecurityPage';
 import { AppShell } from './shared/components/AppShell';
 import { ProtectedRoute } from './shared/components/ProtectedRoute';
 import { Toaster } from './components/ui/toaster';
@@ -22,6 +24,7 @@ export default function App() {
         <Route path="/confirm" element={<ConfirmSignUpPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route
           path="/admin"
           element={
@@ -36,6 +39,7 @@ export default function App() {
           <Route path="tables" element={<TablesPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="theme" element={<ThemePage />} />
+          <Route path="security" element={<SecurityPage />} />
         </Route>
         <Route path="/" element={<Navigate to="/admin" replace />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />

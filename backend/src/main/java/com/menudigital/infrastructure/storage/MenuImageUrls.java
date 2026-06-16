@@ -3,13 +3,14 @@ package com.menudigital.infrastructure.storage;
 import java.util.regex.Pattern;
 
 /**
- * Claves S3 en BD ({@code menus/{tenantId}/{uuid}.ext}); URLs públicas vía proxy {@code /api/media/...}.
+ * Claves S3 en BD ({@code menus/{tenantId}/{uuid}.ext}); lectura vía URLs prefirmadas de corta duración.
  */
 @jakarta.enterprise.context.ApplicationScoped
 public class MenuImageUrls {
 
     private static final String KEY_PREFIX = "menus/";
-    private static final String API_PREFIX = "/api/media/";
+    /** Legacy: rutas guardadas antes del paso a presigned URLs. */
+    private static final String LEGACY_API_PREFIX = "/api/media/";
     private static final Pattern VALID_KEY = Pattern.compile(
         "^menus/[^/]+/[^/]+\\.(jpg|jpeg|png|gif|webp)$",
         Pattern.CASE_INSENSITIVE
@@ -25,8 +26,8 @@ public class MenuImageUrls {
             return "";
         }
         String trimmed = value.trim();
-        if (trimmed.startsWith(API_PREFIX)) {
-            trimmed = trimmed.substring(API_PREFIX.length());
+        if (trimmed.startsWith(LEGACY_API_PREFIX)) {
+            trimmed = trimmed.substring(LEGACY_API_PREFIX.length());
         }
         int menusIdx = trimmed.indexOf(KEY_PREFIX);
         if (menusIdx >= 0) {
@@ -37,14 +38,5 @@ public class MenuImageUrls {
             trimmed = trimmed.substring(0, q);
         }
         return trimmed.startsWith(KEY_PREFIX) ? trimmed : "";
-    }
-
-    /** Ruta relativa al API para &lt;img src&gt; (el frontend antepone {@code VITE_API_URL}). */
-    public String toApiPath(String stored) {
-        String key = normalizeForStorage(stored);
-        if (key.isEmpty()) {
-            return "";
-        }
-        return API_PREFIX + key;
     }
 }

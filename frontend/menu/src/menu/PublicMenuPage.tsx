@@ -106,7 +106,7 @@ export function PublicMenuPage() {
       if (!prev.includes(filter) && slug) {
         const sessionId = getSessionId();
         menuApi.recordEvent(slug, {
-          eventType: 'FILTER_USED',
+          eventType: 'FILTER_APPLIED',
           sessionId,
           metadata: { filter },
         });

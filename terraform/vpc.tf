@@ -12,6 +12,6 @@ module "vpc" {
   database_subnets = local.db_subnet_cidrs
 
   enable_nat_gateway     = true
-  single_nat_gateway     = true
-  one_nat_gateway_per_az = false
+  single_nat_gateway     = false
+  one_nat_gateway_per_az = true
 }

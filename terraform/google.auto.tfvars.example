@@ -1,0 +1,19 @@
+# Credenciales OAuth 2.0 de Google para el login federado en Cognito.
+#
+# Uso:
+#   1. cp google.auto.tfvars.example google.auto.tfvars
+#   2. Completar con el Client ID / Client Secret de un "OAuth 2.0 Client ID"
+#      (tipo "Web application") creado en Google Cloud Console.
+#   3. terraform apply  -> google.auto.tfvars se carga automáticamente.
+#
+# google.auto.tfvars está en .gitignore y NUNCA debe commitearse.
+#
+# Alternativa sin archivo (CI): export TF_VAR_google_oauth='{"client_id":"...","client_secret":"..."}'
+#
+# En Google Cloud Console, configurar como "Authorized redirect URI":
+#   https://<cognito_domain_prefix>.auth.<region>.amazoncognito.com/oauth2/idpresponse
+
+google_oauth = {
+  client_id     = "REEMPLAZAR.apps.googleusercontent.com"
+  client_secret = "REEMPLAZAR"
+}

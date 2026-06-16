@@ -56,6 +56,23 @@ if ! find "${DIST}/orchestrator" -name '_psycopg*.so' | grep -q .; then
   exit 1
 fi
 
-echo "Worker: sin pip (boto3/botocore vienen en el runtime Lambda)"
+echo "Instalando pyarrow en worker (lectura Parquet S3)..."
+if [[ "${LAMBDA_BUILD_NATIVE:-0}" == "1" ]] && [[ -f /etc/os-release ]] && grep -q "Amazon Linux" /etc/os-release 2>/dev/null; then
+  pip install --disable-pip-version-check -q -t "${DIST}/worker" 'pyarrow>=15.0'
+else
+  LAMBDA_PLATFORM="${LAMBDA_PLATFORM:-manylinux2014_x86_64}"
+  LAMBDA_PY="${LAMBDA_PY:-3.12}"
+  pip install \
+    --disable-pip-version-check \
+    -q \
+    -t "${DIST}/worker" \
+    --upgrade \
+    --platform "${LAMBDA_PLATFORM}" \
+    --implementation cp \
+    --python-version "${LAMBDA_PY}" \
+    --only-binary=:all: \
+    'pyarrow>=15.0'
+fi
+
 echo "Listo: ${DIST}/orchestrator (orchestrator_lambda.handler)"
 echo "       ${DIST}/worker (worker_lambda.handler)"

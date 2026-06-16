@@ -1,10 +1,11 @@
 package com.menudigital.application.analytics;
 
 import com.menudigital.application.shared.TenantContext;
-import com.menudigital.domain.analytics.AnalyticsRepository;
-import com.menudigital.domain.analytics.InteractionEvent;
+import com.menudigital.domain.analytics.AnalyticsAggregateReadRepository;
+import com.menudigital.domain.analytics.OrderAnalyticsRepository;
 import com.menudigital.domain.analytics.RealtimeAnalyticsResponse;
 import com.menudigital.domain.analytics.RealtimeAnalyticsResponse.BucketCount;
+import com.menudigital.domain.tenant.TenantId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -12,44 +13,62 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class GetRealtimeAnalyticsUseCase {
-    
+
     @Inject
-    AnalyticsRepository analyticsRepository;
-    
+    AnalyticsAggregateReadRepository aggregateReadRepository;
+
+    @Inject
+    OrderAnalyticsRepository orderAnalyticsRepository;
+
     @Inject
     TenantContext tenantContext;
-    
+
     public RealtimeAnalyticsResponse execute() {
-        String tenantId = tenantContext.getTenantId().toString();
+        TenantId tenantId = tenantContext.getTenantId();
+        String tenantStr = tenantId.toString();
         Instant now = Instant.now();
         Instant sixtyMinutesAgo = now.minus(60, ChronoUnit.MINUTES);
         Instant fiveMinutesAgo = now.minus(5, ChronoUnit.MINUTES);
-        
-        List<InteractionEvent> events = analyticsRepository.findByTenantAndPeriod(
-            tenantId, sixtyMinutesAgo, now
-        );
-        
+
+        var hours = aggregateReadRepository.queryHours(tenantStr, sixtyMinutesAgo, now);
+        var orderBuckets = orderAnalyticsRepository.orderBuckets(tenantId, sixtyMinutesAgo, now, 5);
+        Map<Long, Long> ordersByStart = orderBuckets.stream()
+            .collect(Collectors.toMap(b -> b.bucketStart().toEpochMilli(), OrderAnalyticsRepository.RealtimeOrderBucket::orderCount));
+
         List<BucketCount> buckets = new ArrayList<>();
+        long totalEvents5 = 0;
+        long totalEvents60 = 0;
+        long totalOrders5 = 0;
+        long totalOrders60 = 0;
+
         for (int i = 11; i >= 0; i--) {
             Instant bucketStart = now.minus((i + 1) * 5L, ChronoUnit.MINUTES);
             Instant bucketEnd = now.minus(i * 5L, ChronoUnit.MINUTES);
-            
-            long count = events.stream()
-                .filter(e -> !e.timestamp().isBefore(bucketStart) && e.timestamp().isBefore(bucketEnd))
-                .count();
-            
-            buckets.add(new BucketCount(bucketStart, count));
+
+            long eventCount = hours.stream()
+                .filter(h -> !h.bucketStart().isBefore(bucketStart) && h.bucketStart().isBefore(bucketEnd))
+                .mapToLong(h -> h.menuViews() + h.itemViews())
+                .sum();
+
+            long orderCount = ordersByStart.getOrDefault(bucketStart.toEpochMilli(), 0L);
+
+            buckets.add(new BucketCount(bucketStart, eventCount, orderCount));
+
+            if (!bucketStart.isBefore(fiveMinutesAgo)) {
+                totalEvents5 += eventCount;
+                totalOrders5 += orderCount;
+            }
+            totalEvents60 += eventCount;
+            totalOrders60 += orderCount;
         }
-        
-        long totalLast5Min = events.stream()
-            .filter(e -> e.timestamp().isAfter(fiveMinutesAgo))
-            .count();
-        
-        long totalLast60Min = events.size();
-        
-        return new RealtimeAnalyticsResponse(buckets, totalLast5Min, totalLast60Min);
+
+        return new RealtimeAnalyticsResponse(
+            buckets, totalEvents5, totalEvents60, totalOrders5, totalOrders60
+        );
     }
 }

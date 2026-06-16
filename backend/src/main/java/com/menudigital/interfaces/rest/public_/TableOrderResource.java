@@ -1,5 +1,6 @@
 package com.menudigital.interfaces.rest.public_;
 
+import com.menudigital.application.analytics.PublishOrderAnalyticsUseCase;
 import com.menudigital.application.order.OrderEventBroadcaster;
 import com.menudigital.domain.menu.Menu;
 import com.menudigital.domain.menu.MenuItem;
@@ -16,7 +17,7 @@ import com.menudigital.domain.table.TableSession;
 import com.menudigital.domain.tenant.Restaurant;
 import com.menudigital.domain.tenant.RestaurantRepository;
 import com.menudigital.domain.tenant.RestaurantTheme;
-import com.menudigital.infrastructure.storage.MenuImageUrls;
+import com.menudigital.infrastructure.storage.S3ImageStorageService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
@@ -59,7 +60,10 @@ public class TableOrderResource {
     OrderEventBroadcaster orderEventBroadcaster;
 
     @Inject
-    MenuImageUrls menuImageUrls;
+    PublishOrderAnalyticsUseCase publishOrderAnalyticsUseCase;
+
+    @Inject
+    S3ImageStorageService imageStorageService;
     
     @GET
     @Path("/{qrToken}")
@@ -392,7 +396,9 @@ public class TableOrderResource {
                     }
                     order.submit();
                     orderRepository.update(order);
-                    
+                    order.setItems(orderRepository.findItemsByOrderId(order.getId()));
+                    publishOrderAnalyticsUseCase.publishOrderSubmitted(order);
+
                     return Response.ok(toOrderResponse(order)).build();
                 } catch (IllegalStateException e) {
                     return Response.status(Response.Status.BAD_REQUEST)
@@ -494,7 +500,7 @@ public class TableOrderResource {
             item.getName(),
             item.getDescription(),
             item.getPrice().toPlainString(),
-            menuImageUrls.toApiPath(item.getImageUrl()),
+            imageStorageService.toPresignedUrl(item.getImageUrl()),
             item.getDietaryTags().stream().map(Enum::name).toList(),
             modifiers
         );

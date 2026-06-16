@@ -1,17 +1,17 @@
 package com.menudigital.infrastructure.storage;
 
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import java.io.InputStream;
-import java.util.Optional;
+import java.time.Duration;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -25,6 +25,11 @@ public class S3ImageStorageService {
 
     @ConfigProperty(name = "aws.s3.bucket", defaultValue = "menudigital-images")
     String bucketName;
+
+    @ConfigProperty(name = "aws.s3.presign-ttl-seconds", defaultValue = "3600")
+    int presignTtlSeconds;
+
+    private volatile S3Presigner presigner;
 
     /** Sube el objeto y devuelve la clave S3 (p. ej. {@code menus/{tenantId}/{uuid}.jpg}). */
     public String upload(InputStream inputStream, String contentType, long contentLength, String tenantId) {
@@ -44,46 +49,38 @@ public class S3ImageStorageService {
         }
     }
 
-    public Optional<StoredMenuImage> open(String objectKey) {
-        if (!menuImageUrls.isValidObjectKey(objectKey)) {
-            return Optional.empty();
+    /** URL prefirmada GET de corta duración; vacío si el valor no es una clave válida. */
+    public String toPresignedUrl(String storedOrKey) {
+        String key = menuImageUrls.normalizeForStorage(storedOrKey);
+        if (key.isEmpty()) {
+            return "";
         }
-        S3Client s3Client = s3ClientFactory.createClient();
-        try {
-            var response = s3Client.getObject(
-                GetObjectRequest.builder().bucket(bucketName).key(objectKey).build()
-            );
-            String contentType = response.response().contentType();
-            if (contentType == null || contentType.isBlank()) {
-                contentType = contentTypeFromKey(objectKey);
-            }
-            return Optional.of(new StoredMenuImage(
-                response,
-                response.response().contentLength() != null ? response.response().contentLength() : -1L,
-                contentType
-            ));
-        } catch (NoSuchKeyException e) {
-            return Optional.empty();
-        } catch (S3Exception e) {
-            if (e.statusCode() == 404) {
-                return Optional.empty();
-            }
-            throw e;
-        }
+        var presignRequest = GetObjectPresignRequest.builder()
+            .signatureDuration(Duration.ofSeconds(Math.max(60, presignTtlSeconds)))
+            .getObjectRequest(b -> b.bucket(bucketName).key(key))
+            .build();
+        return presigner().presignGetObject(presignRequest).url().toExternalForm();
     }
 
-    private static String contentTypeFromKey(String key) {
-        String lower = key.toLowerCase();
-        if (lower.endsWith(".png")) {
-            return "image/png";
+    private S3Presigner presigner() {
+        S3Presigner local = presigner;
+        if (local == null) {
+            synchronized (this) {
+                local = presigner;
+                if (local == null) {
+                    presigner = local = s3ClientFactory.createPresigner();
+                }
+            }
         }
-        if (lower.endsWith(".gif")) {
-            return "image/gif";
+        return local;
+    }
+
+    @PreDestroy
+    void closePresigner() {
+        S3Presigner local = presigner;
+        if (local != null) {
+            local.close();
         }
-        if (lower.endsWith(".webp")) {
-            return "image/webp";
-        }
-        return "image/jpeg";
     }
 
     private static String getExtension(String contentType) {

@@ -46,6 +46,30 @@ output "backend_ml_s3_bucket" {
   value = local.ml_bucket_name
 }
 
+output "ml_training_queue_url" {
+  value = aws_sqs_queue.ml-training.url
+}
+
+output "ml_training_dlq_url" {
+  value = aws_sqs_queue.ml-training-dlq.url
+}
+
+output "alerts_sns_topic_arn" {
+  value = aws_sns_topic.alerts.arn
+}
+
+output "cloudwatch_dashboard_name" {
+  value = aws_cloudwatch_dashboard.operations.dashboard_name
+}
+
+output "cloudwatch_dashboard_url" {
+  value = "https://${data.aws_region.current.region}.console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.operations.dashboard_name}"
+}
+
+output "ecs_backend_log_group" {
+  value = aws_cloudwatch_log_group.ecs_backend.name
+}
+
 output "cognito_user_pool_id" {
   value = aws_cognito_user_pool.main.id
 }
@@ -57,3 +81,45 @@ output "cognito_user_pool_client_id" {
 output "cognito_issuer_url" {
   value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
 }
+
+output "cognito_domain" {
+  description = "Dominio del Hosted UI de Cognito (sin esquema), usado por Amplify para el flujo OAuth."
+  value       = "${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
+}
+
+output "analytics_events_bucket" {
+  value = local.analytics_bucket_name
+}
+
+output "kinesis_stream_name" {
+  value = aws_kinesis_stream.menuqr_events.name
+}
+
+output "kinesis_stream_arn" {
+  value = aws_kinesis_stream.menuqr_events.arn
+}
+
+output "analytics_processor_dlq_url" {
+  value = aws_sqs_queue.analytics_processor_dlq.url
+}
+
+output "firehose_delivery_stream_name" {
+  value = aws_kinesis_firehose_delivery_stream.menuqr_events.name
+}
+
+output "glue_analytics_database" {
+  value = aws_glue_catalog_database.menuqr.name
+}
+
+output "glue_analytics_enrich_job_name" {
+  value = aws_glue_job.analytics_enrich.name
+}
+
+output "athena_workgroup_name" {
+  value = aws_athena_workgroup.analytics.name
+}
+
+output "waf_web_acl_arn" {
+  value = var.waf.enabled ? aws_wafv2_web_acl.alb[0].arn : null
+}
+

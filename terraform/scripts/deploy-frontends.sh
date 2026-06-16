@@ -42,10 +42,16 @@ MENU_SITE="$(terraform -chdir="${TF_DIR}" output -raw frontend_menu_website_url)
 
 COGNITO_USER_POOL_ID="$(terraform -chdir="${TF_DIR}" output -raw cognito_user_pool_id 2>/dev/null || true)"
 COGNITO_CLIENT_ID="$(terraform -chdir="${TF_DIR}" output -raw cognito_user_pool_client_id 2>/dev/null || true)"
+COGNITO_DOMAIN="$(terraform -chdir="${TF_DIR}" output -raw cognito_domain 2>/dev/null || true)"
 
 API_URL="${API_URL%/}"
 MENU_URL="${MENU_URL%/}"
 ADMIN_SITE="${ADMIN_SITE%/}"
+
+# URLs OAuth (login con Google). Deben coincidir exactamente con callback_urls/logout_urls
+# del user pool client en Terraform.
+COGNITO_REDIRECT_SIGN_IN="${ADMIN_SITE}/auth/callback"
+COGNITO_REDIRECT_SIGN_OUT="${ADMIN_SITE}/login"
 
 echo "    Región:       ${AWS_REGION}"
 echo "    VITE_API_URL: ${API_URL}"
@@ -55,6 +61,9 @@ echo "    Bucket menú:  s3://${MENU_BUCKET}"
 if [[ -n "${COGNITO_USER_POOL_ID}" && -n "${COGNITO_CLIENT_ID}" ]]; then
   echo "    Cognito pool: ${COGNITO_USER_POOL_ID}"
   echo "    Cognito client: ${COGNITO_CLIENT_ID}"
+fi
+if [[ -n "${COGNITO_DOMAIN}" ]]; then
+  echo "    Cognito domain: ${COGNITO_DOMAIN} (login con Google habilitado)"
 fi
 
 build_and_sync() {
@@ -90,6 +99,14 @@ if [[ -n "${COGNITO_USER_POOL_ID}" && -n "${COGNITO_CLIENT_ID}" ]]; then
     "VITE_COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}"
     "VITE_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}"
   )
+  # Solo si hay dominio Hosted UI: habilita el botón "Continue with Google".
+  if [[ -n "${COGNITO_DOMAIN}" ]]; then
+    ADMIN_COGNITO_ENV+=(
+      "VITE_COGNITO_DOMAIN=${COGNITO_DOMAIN}"
+      "VITE_COGNITO_REDIRECT_SIGN_IN=${COGNITO_REDIRECT_SIGN_IN}"
+      "VITE_COGNITO_REDIRECT_SIGN_OUT=${COGNITO_REDIRECT_SIGN_OUT}"
+    )
+  fi
 fi
 
 build_and_sync "Admin" "${ADMIN_DIR}" "${ADMIN_BUCKET}" "VITE_MENU_URL=${MENU_URL}" "${ADMIN_COGNITO_ENV[@]}"

@@ -41,13 +41,13 @@ export const menuApi = {
     await apiClient.patch(`/api/admin/menu/items/${id}/availability`, { available });
   },
 
-  uploadImage: async (file: File): Promise<string> => {
+  uploadImage: async (file: File): Promise<{ key: string; previewUrl: string }> => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await apiClient.post<{ url: string }>('/api/admin/upload', formData, {
+    const response = await apiClient.post<{ key: string; previewUrl: string }>('/api/admin/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return response.data.url;
+    return response.data;
   },
 
   getModifiers: async (itemId: string): Promise<Modifier[]> => {

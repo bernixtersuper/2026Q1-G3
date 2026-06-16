@@ -1,0 +1,8 @@
+
+El producto funciona y vienen bien encaminados.
+Tienen que aprovechar y potenciar la parte de analytics
+
+
+Es importante que repiensen los esquemas de DynamoDB, 
+enfocándose en el análisis que van a hacer en los gráficos y las métricas que van a analizar
+

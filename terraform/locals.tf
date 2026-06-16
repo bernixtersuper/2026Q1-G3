@@ -20,7 +20,7 @@ locals {
   images_bucket_name = module.s3-private-buckets[var.images_bucket_name].bucket_name
   ml_bucket_name     = module.s3-private-buckets[var.ml_bucket_name].bucket_name
 
-  db_jdbc_url = "jdbc:postgresql://${module.rds_proxy.proxy_endpoint}:${aws_db_instance.db.port}/${var.db.name}"
+  db_jdbc_url = "jdbc:postgresql://${module.rds_proxy.proxy_endpoint}:${aws_db_instance.db.port}/${var.db.name}?sslmode=require"
 
   route_table_ids = module.vpc.private_route_table_ids
   gateway_endpoints = [
@@ -33,7 +33,16 @@ locals {
   ecr_api_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.api"
   ecr_dkr_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.dkr"
 
-  ml_training_root = "${path.module}/../ml-training"
+  ml_training_root         = "${path.module}/../ml-training"
+  analytics_processor_root = "${path.module}/../analytics-processor"
+  analytics_processor_dist = "${local.analytics_processor_root}/lambda_dist/processor"
+
+  analytics_bucket_name = module.s3_analytics.bucket_name
 
   backend_image = "${aws_ecr_repository.backend.repository_url}:${var.backend.image_tag}"
+
+  cors_allowed_origins = join(",", [
+    module.s3-public-websites[var.admin_website_name].bucket_website_url,
+    module.s3-public-websites[var.user_website_name].bucket_website_url,
+  ])
 }

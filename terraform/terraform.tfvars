@@ -14,8 +14,11 @@ db = {
 }
 
 backend = {
-  image_tag     = "latest"
-  desired_count = 2
+  image_tag              = "latest"
+  desired_count          = 2
+  autoscaling_min        = 2
+  autoscaling_max        = 4
+  autoscaling_target_cpu = 70
 }
 
 ml_training = {
@@ -23,3 +26,6 @@ ml_training = {
   schedule_enabled    = true
   sqs_batch_size      = 10
 }
+
+alert_email = "ctepedino@itba.edu.ar"
+

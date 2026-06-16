@@ -1,7 +1,6 @@
 package com.menudigital.interfaces.rest.admin;
 
 import com.menudigital.application.shared.TenantContext;
-import com.menudigital.infrastructure.storage.MenuImageUrls;
 import com.menudigital.infrastructure.storage.S3ImageStorageService;
 import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
@@ -28,9 +27,6 @@ public class ImageUploadResource {
     
     @Inject
     S3ImageStorageService imageStorageService;
-
-    @Inject
-    MenuImageUrls menuImageUrls;
     
     @Inject
     TenantContext tenantContext;
@@ -75,7 +71,10 @@ public class ImageUploadResource {
                 tenantContext.getTenantId().toString()
             );
             
-            return Response.ok(new UploadResponse(menuImageUrls.toApiPath(key))).build();
+            return Response.ok(new UploadResponse(
+                key,
+                imageStorageService.toPresignedUrl(key)
+            )).build();
         } catch (IOException e) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                 .entity(new ErrorResponse("UPLOAD_FAILED", "Failed to upload image"))
@@ -83,6 +82,6 @@ public class ImageUploadResource {
         }
     }
     
-    public record UploadResponse(String url) {}
+    public record UploadResponse(String key, String previewUrl) {}
     public record ErrorResponse(String code, String message) {}
 }

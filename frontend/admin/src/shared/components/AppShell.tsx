@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
-import { UtensilsCrossed, BarChart3, LogOut, QrCode, ClipboardList, Palette } from 'lucide-react';
+import { UtensilsCrossed, BarChart3, LogOut, QrCode, ClipboardList, Palette, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/admin/tables', icon: QrCode, label: 'Tables & QR' },
   { to: '/admin/orders', icon: ClipboardList, label: 'Orders' },
   { to: '/admin/theme', icon: Palette, label: 'Theme' },
+  { to: '/admin/security', icon: Shield, label: 'Security' },
 ];
 
 export function AppShell() {

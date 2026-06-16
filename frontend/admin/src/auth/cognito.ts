@@ -8,10 +8,16 @@ import {
   signOut as amplifySignOut,
   fetchAuthSession,
   autoSignIn,
+  confirmSignIn,
+  setUpTOTP,
+  verifyTOTPSetup,
+  updateMFAPreference,
+  fetchMFAPreference,
+  signInWithRedirect,
   type SignInOutput,
 } from 'aws-amplify/auth';
 import { jwtDecode } from 'jwt-decode';
-import { isAmplifyAuthConfigured } from './amplifyConfig';
+import { isAmplifyAuthConfigured, isOAuthConfigured } from './amplifyConfig';
 
 export interface CognitoTokens {
   idToken: string;
@@ -20,6 +26,19 @@ export interface CognitoTokens {
 
 export function canUseCognitoAuth() {
   return isAmplifyAuthConfigured();
+}
+
+/** El login federado con Google requiere user pool + OAuth (Hosted UI) configurados. */
+export function canUseGoogleAuth() {
+  return isAmplifyAuthConfigured() && isOAuthConfigured();
+}
+
+/**
+ * Inicia el flujo OAuth Authorization Code con Google.
+ * Redirige al Hosted UI de Cognito; al volver, AuthCallbackPage finaliza la sesión.
+ */
+export async function signInWithGoogle() {
+  await signInWithRedirect({ provider: 'Google' });
 }
 
 export function isAlreadySignedInError(err: unknown): boolean {
@@ -125,4 +144,30 @@ export async function getCurrentTokens(): Promise<CognitoTokens | null> {
 
 export async function signOutEverywhere() {
   await amplifySignOut();
+}
+
+export type TotpMfaStatus = 'disabled' | 'enabled';
+
+export async function getTotpMfaStatus(): Promise<TotpMfaStatus> {
+  const pref = await fetchMFAPreference();
+  return pref.enabled?.includes('TOTP') ? 'enabled' : 'disabled';
+}
+
+/** URI otpauth:// para QR de enrolamiento TOTP (usuario autenticado). */
+export async function beginTotpSetup(): Promise<string> {
+  const details = await setUpTOTP();
+  return details.getSetupUri('MenuQR Admin').toString();
+}
+
+export async function verifyAndEnableTotp(code: string): Promise<void> {
+  await verifyTOTPSetup({ code: code.trim() });
+  await updateMFAPreference({ totp: 'PREFERRED' });
+}
+
+export async function disableTotpMfa(): Promise<void> {
+  await updateMFAPreference({ totp: 'DISABLED' });
+}
+
+export async function confirmSignInWithTotp(code: string): Promise<SignInOutput> {
+  return confirmSignIn({ challengeResponse: code.trim() });
 }

@@ -14,7 +14,7 @@ export function ItemRankingTable({ data }: ItemRankingTableProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Top Items</CardTitle>
+          <CardTitle>Top vistos</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-center text-muted-foreground py-8">

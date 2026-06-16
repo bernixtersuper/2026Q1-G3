@@ -147,6 +147,51 @@ terraform output frontend_admin_website_url
 terraform output frontend_menu_website_url
 ```
 
+### Login federado con Google (Cognito)
+
+El panel admin soporta login con **email/contraseña** y con **Google** (federado vía Cognito Hosted UI,
+flujo OAuth Authorization Code). El login con Google es **opcional**: si no se configuran credenciales,
+el panel sigue funcionando solo con email/contraseña y el botón de Google no se muestra.
+
+**1. Crear credenciales OAuth en Google Cloud Console**
+
+- *APIs & Services → Credentials → Create Credentials → OAuth client ID* (tipo **Web application**).
+- En **Authorized redirect URIs**, agregar la URL de `idpresponse` del dominio de Cognito:
+
+  ```
+  https://<cognito_domain_prefix>.auth.<region>.amazoncognito.com/oauth2/idpresponse
+  ```
+
+  El prefijo se define con la variable `cognito_domain_prefix` (default `menuqr-g3-auth`).
+
+**2. Proveer las credenciales a Terraform (sin commitearlas)**
+
+```bash
+cp terraform/google.auto.tfvars.example terraform/google.auto.tfvars
+# editar terraform/google.auto.tfvars con el Client ID y Client Secret
+```
+
+`*.auto.tfvars` está en `.gitignore`: el secret **nunca** se versiona. En CI, alternativamente:
+
+```bash
+export TF_VAR_google_oauth='{"client_id":"...","client_secret":"..."}'
+```
+
+**3. Aplicar y desplegar**
+
+```bash
+bash terraform/scripts/deploy.sh           # crea el IdP de Google, el dominio y actualiza el client
+# o, si la infra ya existe, solo el frontend:
+bash terraform/scripts/deploy-frontends.sh # inyecta VITE_COGNITO_DOMAIN y las redirect URLs
+```
+
+`deploy-frontends.sh` lee `terraform output cognito_domain` y construye las URLs de redirección
+(`<admin_url>/auth/callback` y `<admin_url>/login`), que coinciden exactamente con los
+`callback_urls`/`logout_urls` del user pool client.
+
+> El user pool client también registra `http://localhost:5173/...` para poder verificar el flujo
+> con `npm run dev` en el frontend admin.
+
 ### Justificación del uso de scripts Bash
 
 La subida de imagenes a ECR y de archivos de los sitios web a los S3 se realiza mediante scripts.

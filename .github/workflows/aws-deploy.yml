@@ -121,7 +121,9 @@ jobs:
           cache-path: "~/.m2/repository"
 
       - name: Build Lambda artifacts
-        run: bash ml-training/scripts/build_lambda_dists.sh
+        run: |
+          bash ml-training/scripts/build_lambda_dists.sh
+          bash analytics-processor/scripts/build_lambda_dist.sh
 
       - name: Write Terraform backend config
         if: env.USE_REMOTE_BACKEND == 'true'

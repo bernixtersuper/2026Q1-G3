@@ -7,6 +7,7 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
 import java.util.Optional;
@@ -36,6 +37,22 @@ public class S3ClientFactory {
         if (endpointOverride.isPresent() && !endpointOverride.get().isBlank()) {
             builder.endpointOverride(URI.create(endpointOverride.get()));
             builder.forcePathStyle(true);
+            builder.credentialsProvider(StaticCredentialsProvider.create(
+                AwsBasicCredentials.create(accessKey, secretKey)
+            ));
+        } else {
+            builder.credentialsProvider(DefaultCredentialsProvider.create());
+        }
+
+        return builder.build();
+    }
+
+    public S3Presigner createPresigner() {
+        var builder = S3Presigner.builder()
+            .region(Region.of(region));
+
+        if (endpointOverride.isPresent() && !endpointOverride.get().isBlank()) {
+            builder.endpointOverride(URI.create(endpointOverride.get()));
             builder.credentialsProvider(StaticCredentialsProvider.create(
                 AwsBasicCredentials.create(accessKey, secretKey)
             ));

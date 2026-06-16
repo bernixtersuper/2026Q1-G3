@@ -4,6 +4,7 @@ import { Hub } from 'aws-amplify/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from './useAuth';
 import { bootstrapBackendSession } from './sessionBootstrap';
+import { hasCognitoSession } from './cognito';
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -28,6 +29,8 @@ export function AuthCallbackPage() {
       }
     };
 
+    // Al volver del Hosted UI con `?code=`, Amplify intercambia el código por tokens
+    // de forma asíncrona y recién entonces emite el evento `signInWithRedirect`.
     const unsubscribe = Hub.listen('auth', ({ payload }) => {
       if (payload.event === 'signInWithRedirect') {
         void finalize();
@@ -39,7 +42,14 @@ export function AuthCallbackPage() {
       }
     });
 
-    void finalize();
+    // Caso recarga de la página (la sesión de Cognito ya existe y no hay código que
+    // procesar): finalizamos directamente sin esperar el evento del Hub.
+    (async () => {
+      if (cancelled) return;
+      if (await hasCognitoSession()) {
+        void finalize();
+      }
+    })();
 
     return () => {
       cancelled = true;

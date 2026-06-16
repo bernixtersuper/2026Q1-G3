@@ -85,9 +85,10 @@ resource "aws_db_instance" "db" {
   db_subnet_group_name   = module.vpc.database_subnet_group_name
   vpc_security_group_ids = [aws_security_group.db.id]
 
-  multi_az            = true
-  publicly_accessible = false
-  skip_final_snapshot = true
+  multi_az                  = true
+  publicly_accessible       = false
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "${local.name_prefix}-postgres-final"
 
   backup_retention_period    = 7
   auto_minor_version_upgrade = true

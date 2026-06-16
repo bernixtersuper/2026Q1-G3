@@ -45,19 +45,37 @@ resource "aws_ecs_task_definition" "backend" {
       protocol      = "tcp"
     }]
 
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.ecs_backend.name
+        "awslogs-region"        = data.aws_region.current.region
+        "awslogs-stream-prefix" = "backend"
+      }
+    }
+
     environment = [
       { name = "DB_URL", value = local.db_jdbc_url },
       { name = "DB_SECRET_ARN", value = aws_db_instance.db.master_user_secret[0].secret_arn },
       { name = "DB_SECRET_CACHE_SECONDS", value = "300" },
       { name = "AWS_REGION", value = data.aws_region.current.region },
       { name = "S3_BUCKET", value = local.images_bucket_name },
-      { name = "DYNAMO_TABLE", value = aws_dynamodb_table.menuqr_events.name },
+      { name = "DYNAMO_ANALYTICS_TABLE", value = aws_dynamodb_table.menuqr_analytics.name },
+      { name = "KINESIS_STREAM_NAME", value = aws_kinesis_stream.menuqr_events.name },
+      { name = "ANALYTICS_KINESIS_ENABLED", value = "true" },
+      { name = "ATHENA_WORKGROUP", value = aws_athena_workgroup.analytics.name },
+      { name = "ATHENA_DATABASE", value = aws_glue_catalog_database.menuqr.name },
+      { name = "ANALYTICS_EVENTS_BUCKET", value = module.s3_analytics.bucket_name },
       { name = "QUARKUS_PROFILE", value = "prod" },
       { name = "RECOMMENDATIONS_MODEL_S3_BUCKET", value = local.ml_bucket_name },
       { name = "COGNITO_ISSUER_URL", value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}" },
       { name = "COGNITO_CLIENT_ID", value = aws_cognito_user_pool_client.admin_spa.id },
+      { name = "QUARKUS_HTTP_CORS_ORIGINS", value = local.cors_allowed_origins },
+      { name = "S3_PRESIGN_TTL_SECONDS", value = "3600" },
     ]
   }])
+
+  depends_on = [aws_cloudwatch_log_group.ecs_backend]
 }
 
 resource "aws_ecs_service" "backend" {
@@ -66,6 +84,14 @@ resource "aws_ecs_service" "backend" {
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = var.backend.desired_count
   launch_type     = "FARGATE"
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = module.vpc.private_subnets
@@ -83,5 +109,31 @@ resource "aws_ecs_service" "backend" {
 
   lifecycle {
     ignore_changes = [desired_count]
+  }
+}
+
+resource "aws_appautoscaling_target" "backend" {
+  max_capacity       = var.backend.autoscaling_max
+  min_capacity       = var.backend.autoscaling_min
+  resource_id        = "service/${aws_ecs_cluster.backend.name}/${aws_ecs_service.backend.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "backend_cpu" {
+  name               = "${local.name_prefix}-backend-cpu"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.backend.resource_id
+  scalable_dimension = aws_appautoscaling_target.backend.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.backend.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+
+    target_value       = var.backend.autoscaling_target_cpu
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
   }
 }
