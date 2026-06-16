@@ -1230,7 +1230,6 @@ El worker ML actual (`ml-training/worker_lambda.py`) se adapta para leer desde *
 
 - **Glue ETL Job** nocturno: dedup S3 → escribe `uniqueMenuSessions`, `topItemIds`, `batchCompletedAt` en `DAY#`.
 - Vista «Tendencias»: `Query DAY#` últimos 90 días.
-- Export CSV: endpoint async con **Athena** (ad-hoc).
 - Worker ML desde S3 (Parquet + señales `ORDER_SUBMITTED`).
 
 ### Fase 5 — Limpieza ✅

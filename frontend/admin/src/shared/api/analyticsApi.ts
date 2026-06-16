@@ -1,6 +1,5 @@
 import { apiClient } from './client';
 import type {
-  AnalyticsExportJob,
   AnalyticsMenuData,
   AnalyticsOperations,
   AnalyticsSummary,
@@ -33,20 +32,6 @@ export const analyticsApi = {
     const response = await apiClient.get<AnalyticsTrends>('/api/admin/analytics/trends', {
       params: { days },
     });
-    return response.data;
-  },
-
-  startExport: async (days: number): Promise<AnalyticsExportJob> => {
-    const response = await apiClient.post<AnalyticsExportJob>('/api/admin/analytics/export', {
-      days,
-    });
-    return response.data;
-  },
-
-  getExportStatus: async (jobId: string): Promise<AnalyticsExportJob> => {
-    const response = await apiClient.get<AnalyticsExportJob>(
-      `/api/admin/analytics/export/${jobId}`
-    );
     return response.data;
   },
 };

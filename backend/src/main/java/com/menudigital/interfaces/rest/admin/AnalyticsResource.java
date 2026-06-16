@@ -1,7 +1,7 @@
 package com.menudigital.interfaces.rest.admin;
 
 import com.menudigital.application.analytics.*;
-import com.menudigital.domain.analytics.*;
+import com.menudigital.domain.analytics.RealtimeAnalyticsResponse;
 import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -9,7 +9,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
-import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -36,9 +35,6 @@ public class AnalyticsResource {
 
     @Inject
     GetAnalyticsTrendsUseCase getAnalyticsTrendsUseCase;
-
-    @Inject
-    AnalyticsExportUseCase analyticsExportUseCase;
 
     @GET
     @Path("/summary")
@@ -75,22 +71,4 @@ public class AnalyticsResource {
     public Response getTrends(@QueryParam("days") @DefaultValue("30") int days) {
         return Response.ok(getAnalyticsTrendsUseCase.execute(days)).build();
     }
-
-    @POST
-    @Path("/export")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Operation(summary = "Start async CSV export via Athena")
-    public Response startExport(ExportRequest request) {
-        int days = request != null && request.days() != null ? request.days() : 30;
-        return Response.accepted(analyticsExportUseCase.startExport(days)).build();
-    }
-
-    @GET
-    @Path("/export/{jobId}")
-    @Operation(summary = "Poll async export job status")
-    public Response getExportStatus(@PathParam("jobId") String jobId) {
-        return Response.ok(analyticsExportUseCase.getStatus(jobId)).build();
-    }
-
-    public record ExportRequest(Integer days) {}
 }

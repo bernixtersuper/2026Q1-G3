@@ -40,7 +40,7 @@ flowchart LR
 | Nombre | `menuqr-analytics` |
 | Claves | `PK` (HASH), `SK` (RANGE) — ambas `String` |
 | Billing | `PAY_PER_REQUEST` |
-| TTL | Atributo `ttl` habilitado (solo en ítems `PROC#`) |
+| TTL | Atributo `ttl` habilitado en ítems `PROC#` (7 d) y `HOUR#` (90 d) |
 | GSI | Ninguno |
 
 Definición Terraform: [`terraform/dynamo_analytics.tf`](../terraform/dynamo_analytics.tf).
@@ -76,9 +76,10 @@ Mismos contadores que `DAY#` pero con granularidad de hora (zona del servidor La
 | Atributo | Hot path |
 |----------|----------|
 | `menuViews`, `itemViews`, `sectionViews`, `cartAdds` | `ADD +1` según tipo de evento |
+| `ttl` | `SET` epoch + 90 días (se renueva en cada evento de esa hora) |
 
 **Uso:** heatmap de vistas, panel realtime (últimos 60 min).  
-**Retención objetivo:** ~90 días.
+**Retención:** 90 días vía TTL (borrado automático eventual por DynamoDB).
 
 ### 3.3 `ITEM#{itemId}` — ranking por ítem
 

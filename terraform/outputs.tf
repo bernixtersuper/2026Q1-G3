@@ -82,8 +82,12 @@ output "cognito_issuer_url" {
   value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
 }
 
-output "analytics_events_bucket" {
-  value = local.analytics_bucket_name
+output "analytics_bronze_bucket" {
+  value = local.analytics_bronze_bucket_name
+}
+
+output "analytics_silver_bucket" {
+  value = local.analytics_silver_bucket_name
 }
 
 output "kinesis_stream_name" {
@@ -92,10 +96,6 @@ output "kinesis_stream_name" {
 
 output "kinesis_stream_arn" {
   value = aws_kinesis_stream.menuqr_events.arn
-}
-
-output "analytics_processor_dlq_url" {
-  value = aws_sqs_queue.analytics_processor_dlq.url
 }
 
 output "firehose_delivery_stream_name" {
@@ -110,8 +110,8 @@ output "glue_analytics_enrich_job_name" {
   value = aws_glue_job.analytics_enrich.name
 }
 
-output "athena_workgroup_name" {
-  value = aws_athena_workgroup.analytics.name
+output "glue_ml_features_crawler_name" {
+  value = aws_glue_crawler.ml_features.name
 }
 
 output "waf_web_acl_arn" {

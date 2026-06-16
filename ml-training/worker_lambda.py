@@ -1,5 +1,5 @@
 """
-Lambda worker: un mensaje SQS = un tenant; lee eventos S3 Parquet y sube MREC (.bin) a S3.
+Lambda worker: un mensaje SQS = un tenant; lee ml_features/ (silver) y sube MREC (.bin) a S3.
 Handler: worker_lambda.handler
 """
 from __future__ import annotations
@@ -10,7 +10,6 @@ import json
 import os
 import struct
 import sys
-from collections import defaultdict
 from typing import Any
 
 import boto3
@@ -20,18 +19,22 @@ try:
 except ImportError:
     pq = None  # type: ignore
 
-# Clave fija; debe coincidir con RecommendationModelLoader (Java) y recommendations_etl.py.
 MODEL_S3_KEY_PATTERN = "recommendations/{tenantId}/model.bin"
 MREC_MAGIC = 0x4D524543
 MREC_VERSION = 4
+DEFAULT_ML_PREFIX = "ml_features"
 
 
 def aws_region() -> str:
     return os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
 
 
-def analytics_events_bucket() -> str:
-    return (os.environ.get("ANALYTICS_EVENTS_BUCKET") or "").strip()
+def silver_bucket() -> str:
+    return (os.environ.get("ANALYTICS_SILVER_BUCKET") or "").strip()
+
+
+def ml_features_prefix() -> str:
+    return (os.environ.get("ML_FEATURES_PREFIX") or DEFAULT_ML_PREFIX).strip().strip("/")
 
 
 def s3_client():
@@ -43,80 +46,56 @@ def default_source_day_utc() -> str:
     return yesterday.strftime("%Y-%m-%d")
 
 
-def read_events_from_s3(tenant_id: str, date_str: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Returns (item_view_counts, order_item_boosts) from Parquet."""
-    bucket = analytics_events_bucket()
+def read_ml_features(tenant_id: str, date_str: str) -> dict[str, int]:
+    """Lee capa silver: ml_features/day=…/tenant_id=…/ (materializada por Glue enrich)."""
+    bucket = silver_bucket()
     if not bucket or pq is None:
-        return {}, {}
+        return {}
 
-    year, month, day = date_str.split("-")
-    prefix = f"events/year={year}/month={int(month):02d}/day={int(day):02d}/"
-    view_counts: dict[str, int] = defaultdict(int)
-    order_boosts: dict[str, int] = defaultdict(int)
-    seen_event_ids: set[str] = set()
+    prefix = f"{ml_features_prefix()}/day={date_str}/tenant_id={tenant_id}/"
+    counts: dict[str, int] = {}
     s3 = s3_client()
 
     paginator = s3.get_paginator("list_objects_v2")
+    found = False
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj.get("Key", "")
             if not key.endswith(".parquet"):
                 continue
+            found = True
             body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
             table = pq.read_table(io.BytesIO(body))
             data = table.to_pydict()
-            n = len(data.get("eventType") or data.get("eventtype") or [])
-            event_types = data.get("eventType") or data.get("eventtype") or [None] * n
-            tenant_ids = data.get("tenantId") or data.get("tenantid") or [None] * n
-            event_ids = data.get("eventId") or data.get("eventid") or [None] * n
-            item_ids = data.get("itemId") or data.get("itemid") or [None] * n
-            metadata_col = data.get("metadata") or [None] * n
+            item_ids = data.get("item_id") or data.get("itemId") or []
+            scores = data.get("popularity_score") or data.get("popularityScore") or []
+            views = data.get("view_count") or data.get("viewCount") or []
+            boosts = data.get("order_boost") or data.get("orderBoost") or []
 
-            for i in range(n):
-                if tenant_ids[i] != tenant_id:
+            for i, item_id in enumerate(item_ids):
+                if not item_id:
                     continue
-                eid = event_ids[i]
-                if eid and eid in seen_event_ids:
-                    continue
-                if eid:
-                    seen_event_ids.add(eid)
+                score = None
+                if i < len(scores) and scores[i] is not None:
+                    score = int(scores[i])
+                elif i < len(views) or i < len(boosts):
+                    v = int(views[i]) if i < len(views) and views[i] is not None else 0
+                    b = int(boosts[i]) if i < len(boosts) and boosts[i] is not None else 0
+                    score = v + b
+                if score is not None:
+                    counts[str(item_id)] = score
 
-                etype = event_types[i]
-                if etype == "ITEM_VIEW":
-                    iid = item_ids[i]
-                    if iid:
-                        view_counts[str(iid)] += 1
-                elif etype == "ORDER_SUBMITTED":
-                    meta = metadata_col[i] if i < len(metadata_col) else None
-                    item_ids_str = ""
-                    if isinstance(meta, dict):
-                        item_ids_str = str(meta.get("itemIds") or meta.get("itemids") or "")
-                    for iid in item_ids_str.split(","):
-                        iid = iid.strip()
-                        if iid:
-                            order_boosts[iid] += 2
-
-    return dict(view_counts), dict(order_boosts)
-
-
-def query_item_views_from_s3(tenant_id: str, date_str: str) -> dict[str, int]:
-    views, boosts = read_events_from_s3(tenant_id, date_str)
-    if not views and not boosts:
+    if not found:
         return {}
-    combined: dict[str, int] = defaultdict(int)
-    for iid, c in views.items():
-        combined[iid] += c
-    for iid, boost in boosts.items():
-        combined[iid] += boost
-    return dict(combined)
+    return counts
 
 
 def query_item_views(tenant_id: str, date_str: str) -> dict[str, int]:
-    counts = query_item_views_from_s3(tenant_id, date_str)
+    counts = read_ml_features(tenant_id, date_str)
     if not counts:
         raise ValueError(
-            f"No hay eventos en S3 para tenant={tenant_id} day={date_str}. "
-            "Verifica Firehose y el prefijo events/ en el bucket analytics."
+            f"No hay ml_features para tenant={tenant_id} day={date_str}. "
+            f"Verifica Glue enrich y s3://{silver_bucket()}/{ml_features_prefix()}/"
         )
     return counts
 

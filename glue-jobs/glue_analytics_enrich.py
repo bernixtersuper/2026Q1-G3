@@ -1,8 +1,9 @@
 """
-Glue ETL nocturno: dedup eventos S3 → enriquece DAY# en DynamoDB.
-Materializa uniqueMenuSessions, topItemIds, filterBreakdown, sectionBreakdown, batchCompletedAt.
+Glue ETL nocturno (bronze → silver):
+  - Lee events/ Parquet (Firehose)
+  - Escribe ml_features/ Parquet por tenant+día (capa ML)
+  - Enriquece DAY# en DynamoDB (dashboard)
 """
-import json
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -16,7 +17,7 @@ from pyspark.sql.window import Window
 
 args = getResolvedOptions(
     sys.argv,
-    ["JOB_NAME", "ANALYTICS_TABLE", "ANALYTICS_BUCKET", "TOP_N"],
+    ["JOB_NAME", "ANALYTICS_TABLE", "BRONZE_BUCKET", "SILVER_BUCKET", "TOP_N"],
 )
 
 optional = {}
@@ -25,9 +26,11 @@ for key in ("GLUE_DATABASE", "EVENTS_TABLE", "AWS_REGION"):
         optional[key] = getResolvedOptions(sys.argv, [key])[key]
 
 analytics_table = args["ANALYTICS_TABLE"]
-bucket = args["ANALYTICS_BUCKET"]
+bronze_bucket = args["BRONZE_BUCKET"]
+silver_bucket = args["SILVER_BUCKET"]
 top_n = int(args.get("TOP_N", "10"))
 region = optional.get("AWS_REGION", "us-east-1")
+ml_features_prefix = "ml_features"
 
 sc = SparkContext()
 glue_context = GlueContext(sc)
@@ -57,7 +60,7 @@ def normalize_columns(df):
 
 def read_day_parquet(target_date):
     prefix = (
-        f"s3://{bucket}/events/year={target_date.year}/"
+        f"s3://{bronze_bucket}/events/year={target_date.year}/"
         f"month={target_date.month:02d}/day={target_date.day:02d}/"
     )
     try:
@@ -75,6 +78,52 @@ def dedup_events(df):
     return df.withColumn("rn", F.row_number().over(w)).filter(F.col("rn") == 1).drop("rn")
 
 
+def write_ml_features(tenant_id: str, date_str: str, tdf) -> None:
+    views_df = (
+        tdf.filter((F.col("eventType") == "ITEM_VIEW") & F.col("itemId").isNotNull())
+        .groupBy("itemId")
+        .agg(F.count("*").alias("view_count"))
+    )
+
+    orders = tdf.filter(F.col("eventType") == "ORDER_SUBMITTED")
+    if "metadata" in orders.columns:
+        order_df = (
+            orders.withColumn("itemIdsStr", F.col("metadata").getItem("itemIds"))
+            .filter(F.col("itemIdsStr").isNotNull() & (F.col("itemIdsStr") != ""))
+            .withColumn("itemId", F.explode(F.split(F.col("itemIdsStr"), ",")))
+            .withColumn("itemId", F.trim(F.col("itemId")))
+            .filter(F.col("itemId") != "")
+            .groupBy("itemId")
+            .agg((F.count("*") * F.lit(2)).alias("order_boost"))
+        )
+    else:
+        order_df = spark.createDataFrame([], "itemId string, order_boost long")
+
+    features = (
+        views_df.join(order_df, "itemId", "full_outer")
+        .fillna(0, subset=["view_count", "order_boost"])
+        .withColumnRenamed("itemId", "item_id")
+        .withColumn("tenant_id", F.lit(tenant_id))
+        .withColumn("day", F.lit(date_str))
+        .withColumn("popularity_score", F.col("view_count") + F.col("order_boost"))
+    )
+
+    if features.rdd.isEmpty():
+        print(f"No ML features for tenant={tenant_id} day={date_str}")
+        return
+
+    out_path = f"s3://{silver_bucket}/{ml_features_prefix}/day={date_str}/tenant_id={tenant_id}/"
+    (
+        features.select(
+            "tenant_id", "day", "item_id", "view_count", "order_boost", "popularity_score"
+        )
+        .coalesce(1)
+        .write.mode("overwrite")
+        .parquet(out_path)
+    )
+    print(f"Wrote ML features tenant={tenant_id} day={date_str} -> {out_path}")
+
+
 def enrich_date(target_date):
     df = read_day_parquet(target_date)
     if df is None:
@@ -90,6 +139,8 @@ def enrich_date(target_date):
 
     for tenant_id in tenants:
         tdf = df.filter(F.col("tenantId") == tenant_id)
+
+        write_ml_features(tenant_id, date_str, tdf)
 
         menu_views = tdf.filter(F.col("eventType") == "MENU_VIEW")
         unique_sessions = menu_views.select("sessionId").distinct().count()

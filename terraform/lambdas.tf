@@ -30,8 +30,8 @@ module "ml_worker_lambda" {
 
   environment_variables = {
     RECOMMENDATIONS_MODEL_S3_BUCKET = module.s3-private-buckets[var.ml_bucket_name].bucket_name
-    ANALYTICS_EVENTS_BUCKET         = module.s3_analytics.bucket_name
-    EVENTS_SOURCE                   = "s3"
+    ANALYTICS_SILVER_BUCKET         = module.s3_analytics_silver.bucket_name
+    ML_FEATURES_PREFIX              = "ml_features"
   }
 }
 

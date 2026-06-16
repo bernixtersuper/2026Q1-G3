@@ -9,7 +9,7 @@ resource "aws_vpc_endpoint" "gateway_endpoints" {
 
 resource "aws_security_group" "vpc_interface_endpoints" {
   name_prefix = "${local.name_prefix}-vpce-"
-  description = "Interface VPC endpoints (Secrets Manager, SQS, ECR)"
+  description = "Interface VPC endpoints (Secrets Manager, SQS, ECR, Kinesis, CloudWatch)"
   vpc_id      = module.vpc.vpc_id
 
   egress {
@@ -98,5 +98,44 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 
   tags = {
     Name = "${local.name_prefix}-ecr-dkr"
+  }
+}
+
+resource "aws_vpc_endpoint" "kinesis_streams" {
+  vpc_id              = module.vpc.vpc_id
+  service_name        = local.kinesis_streams_endpoint_service
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc.private_subnets
+  security_group_ids  = [aws_security_group.vpc_interface_endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name = "${local.name_prefix}-kinesis-streams"
+  }
+}
+
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = module.vpc.vpc_id
+  service_name        = local.logs_endpoint_service
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc.private_subnets
+  security_group_ids  = [aws_security_group.vpc_interface_endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name = "${local.name_prefix}-logs"
+  }
+}
+
+resource "aws_vpc_endpoint" "monitoring" {
+  vpc_id              = module.vpc.vpc_id
+  service_name        = local.monitoring_endpoint_service
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc.private_subnets
+  security_group_ids  = [aws_security_group.vpc_interface_endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name = "${local.name_prefix}-monitoring"
   }
 }

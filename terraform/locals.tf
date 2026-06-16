@@ -32,12 +32,16 @@ locals {
   sqs_endpoint_service            = "com.amazonaws.${data.aws_region.current.region}.sqs"
   ecr_api_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.api"
   ecr_dkr_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.dkr"
+  kinesis_streams_endpoint_service = "com.amazonaws.${data.aws_region.current.region}.kinesis-streams"
+  logs_endpoint_service            = "com.amazonaws.${data.aws_region.current.region}.logs"
+  monitoring_endpoint_service      = "com.amazonaws.${data.aws_region.current.region}.monitoring"
 
   ml_training_root         = "${path.module}/../ml-training"
   analytics_processor_root = "${path.module}/../analytics-processor"
   analytics_processor_dist = "${local.analytics_processor_root}/lambda_dist/processor"
 
-  analytics_bucket_name = module.s3_analytics.bucket_name
+  analytics_bronze_bucket_name = module.s3_analytics_bronze.bucket_name
+  analytics_silver_bucket_name = module.s3_analytics_silver.bucket_name
 
   backend_image = "${aws_ecr_repository.backend.repository_url}:${var.backend.image_tag}"
 

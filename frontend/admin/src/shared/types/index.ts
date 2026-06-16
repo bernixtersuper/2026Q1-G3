@@ -52,15 +52,6 @@ export interface TrendDailyPoint {
   conversionStatus: 'PRELIMINARY' | 'FINAL';
 }
 
-export interface AnalyticsExportJob {
-  jobId: string;
-  status: string;
-  downloadUrl: string | null;
-  createdAt: string | null;
-  completedAt: string | null;
-  errorMessage: string | null;
-}
-
 export interface AnalyticsSummary {
   period: string;
   ordersToday: number;

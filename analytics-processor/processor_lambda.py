@@ -27,6 +27,9 @@ COUNTER_FIELDS = {
     "CART_ITEM_ADDED": ["cartAdds"],
 }
 
+PROC_TTL_SECONDS = 7 * 24 * 3600
+HOUR_TTL_SECONDS = 90 * 24 * 3600
+
 
 def aws_region() -> str:
     return os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
@@ -72,24 +75,34 @@ def parse_timestamp(ts: str | None) -> datetime:
     return datetime.fromisoformat(ts).astimezone(timezone.utc)
 
 
-def counter_update(pk: str, sk: str, fields: list[str]) -> dict[str, Any]:
+def counter_update(
+    pk: str, sk: str, fields: list[str], *, ttl_epoch: int | None = None
+) -> dict[str, Any]:
     expr_parts = []
     values: dict[str, dict[str, str]] = {}
+    names: dict[str, str] = {}
     for field in fields:
         placeholder = f":v{field}"
         expr_parts.append(f"{field} {placeholder}")
         values[placeholder] = {"N": "1"}
-    return {
-        "Update": {
-            "TableName": analytics_table(),
-            "Key": {
-                "PK": {"S": pk},
-                "SK": {"S": sk},
-            },
-            "UpdateExpression": "ADD " + ", ".join(expr_parts),
-            "ExpressionAttributeValues": values,
-        }
+    update_expr = "ADD " + ", ".join(expr_parts)
+    if ttl_epoch is not None:
+        update_expr += " SET #ttl = :ttl"
+        names["#ttl"] = "ttl"
+        values[":ttl"] = {"N": str(ttl_epoch)}
+
+    update: dict[str, Any] = {
+        "TableName": analytics_table(),
+        "Key": {
+            "PK": {"S": pk},
+            "SK": {"S": sk},
+        },
+        "UpdateExpression": update_expr,
+        "ExpressionAttributeValues": values,
     }
+    if names:
+        update["ExpressionAttributeNames"] = names
+    return {"Update": update}
 
 
 def build_transaction(event: dict[str, Any]) -> list[dict[str, Any]]:
@@ -97,7 +110,8 @@ def build_transaction(event: dict[str, Any]) -> list[dict[str, Any]]:
     dt = parse_timestamp(event.get("timestamp"))
     day_sk = f"DAY#{dt.strftime('%Y-%m-%d')}"
     hour_sk = f"HOUR#{dt.strftime('%Y-%m-%dT%H')}"
-    ttl = int(datetime.now(timezone.utc).timestamp()) + 7 * 24 * 3600
+    ttl_proc = int(datetime.now(timezone.utc).timestamp()) + PROC_TTL_SECONDS
+    hour_ttl = int(datetime.now(timezone.utc).timestamp()) + HOUR_TTL_SECONDS
 
     items: list[dict[str, Any]] = [
         {
@@ -107,7 +121,7 @@ def build_transaction(event: dict[str, Any]) -> list[dict[str, Any]]:
                     "PK": {"S": pk},
                     "SK": {"S": f"PROC#{event['eventId']}"},
                     "processedAt": {"S": dt.isoformat()},
-                    "ttl": {"N": str(ttl)},
+                    "ttl": {"N": str(ttl_proc)},
                 },
                 "ConditionExpression": "attribute_not_exists(SK)",
             }
@@ -117,7 +131,7 @@ def build_transaction(event: dict[str, Any]) -> list[dict[str, Any]]:
     fields = COUNTER_FIELDS.get(event["eventType"], [])
     if fields:
         items.append(counter_update(pk, day_sk, fields))
-        items.append(counter_update(pk, hour_sk, fields))
+        items.append(counter_update(pk, hour_sk, fields, ttl_epoch=hour_ttl))
 
     if event["eventType"] == "ITEM_VIEW" and event.get("itemId"):
         items.append({

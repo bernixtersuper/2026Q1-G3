@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -24,24 +24,10 @@ const DAY_OPTIONS = [7, 30, 90] as const;
 
 export function TrendsSection() {
   const [days, setDays] = useState<number>(30);
-  const [exportJobId, setExportJobId] = useState<string | null>(null);
 
   const { data: trends, isLoading } = useQuery({
     queryKey: ['analytics', 'trends', days],
     queryFn: () => analyticsApi.getTrends(days),
-  });
-
-  const exportMutation = useMutation({
-    mutationFn: () => analyticsApi.startExport(days),
-    onSuccess: (job) => setExportJobId(job.jobId),
-  });
-
-  const { data: exportStatus } = useQuery({
-    queryKey: ['analytics', 'export', exportJobId],
-    queryFn: () => analyticsApi.getExportStatus(exportJobId!),
-    enabled: !!exportJobId,
-    refetchInterval: (query) =>
-      query.state.data?.status === 'RUNNING' ? 2000 : false,
   });
 
   if (isLoading || !trends) {
@@ -61,32 +47,6 @@ export function TrendsSection() {
             {d} días
           </Button>
         ))}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => exportMutation.mutate()}
-          disabled={exportMutation.isPending}
-        >
-          Exportar CSV
-        </Button>
-        {exportStatus && (
-          <span className="text-sm text-muted-foreground">
-            Export: {exportStatus.status}
-            {exportStatus.downloadUrl && (
-              <>
-                {' — '}
-                <a
-                  href={exportStatus.downloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline"
-                >
-                  descargar
-                </a>
-              </>
-            )}
-          </span>
-        )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

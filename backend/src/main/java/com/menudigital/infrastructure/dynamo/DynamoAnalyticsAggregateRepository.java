@@ -25,6 +25,9 @@ public class DynamoAnalyticsAggregateRepository implements AnalyticsAggregateRep
     private static final DateTimeFormatter DAY_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter HOUR_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH");
 
+    private static final long PROC_TTL_SECONDS = 7L * 24 * 3600;
+    private static final long HOUR_TTL_SECONDS = 90L * 24 * 3600;
+
     @Inject
     DynamoDbClient dynamoDbClient;
 
@@ -41,7 +44,8 @@ public class DynamoAnalyticsAggregateRepository implements AnalyticsAggregateRep
         var zoned = event.timestamp().atZone(ZONE);
         String daySk = "DAY#" + zoned.format(DAY_FMT);
         String hourSk = "HOUR#" + zoned.format(HOUR_FMT);
-        long ttl = Instant.now().plusSeconds(7L * 24 * 3600).getEpochSecond();
+        long procTtl = Instant.now().getEpochSecond() + PROC_TTL_SECONDS;
+        long hourTtl = Instant.now().getEpochSecond() + HOUR_TTL_SECONDS;
 
         List<TransactWriteItem> items = new ArrayList<>();
 
@@ -52,7 +56,7 @@ public class DynamoAnalyticsAggregateRepository implements AnalyticsAggregateRep
                     "PK", AttributeValue.builder().s(pk).build(),
                     "SK", AttributeValue.builder().s("PROC#" + event.id()).build(),
                     "processedAt", AttributeValue.builder().s(event.timestamp().toString()).build(),
-                    "ttl", AttributeValue.builder().n(String.valueOf(ttl)).build()
+                    "ttl", AttributeValue.builder().n(String.valueOf(procTtl)).build()
                 ))
                 .conditionExpression("attribute_not_exists(SK)")
                 .build())
@@ -60,12 +64,12 @@ public class DynamoAnalyticsAggregateRepository implements AnalyticsAggregateRep
 
         Map<String, String> dayAdds = counterFields(event.eventType());
         if (!dayAdds.isEmpty()) {
-            items.add(counterUpdate(pk, daySk, dayAdds));
+            items.add(counterUpdate(pk, daySk, dayAdds, null));
         }
 
         Map<String, String> hourAdds = counterFields(event.eventType());
         if (!hourAdds.isEmpty()) {
-            items.add(counterUpdate(pk, hourSk, hourAdds));
+            items.add(counterUpdate(pk, hourSk, hourAdds, hourTtl));
         }
 
         if (event.eventType() == EventType.ITEM_VIEW && event.itemId() != null) {
@@ -98,9 +102,10 @@ public class DynamoAnalyticsAggregateRepository implements AnalyticsAggregateRep
         }
     }
 
-    private TransactWriteItem counterUpdate(String pk, String sk, Map<String, String> fields) {
+    private TransactWriteItem counterUpdate(String pk, String sk, Map<String, String> fields, Long ttlEpoch) {
         StringBuilder expr = new StringBuilder("ADD ");
         Map<String, AttributeValue> values = new HashMap<>();
+        Map<String, String> names = new HashMap<>();
         int i = 0;
         for (String field : fields.keySet()) {
             if (i++ > 0) expr.append(", ");
@@ -108,17 +113,26 @@ public class DynamoAnalyticsAggregateRepository implements AnalyticsAggregateRep
             expr.append(field).append(" ").append(placeholder);
             values.put(placeholder, AttributeValue.builder().n("1").build());
         }
+        if (ttlEpoch != null) {
+            expr.append(" SET #ttl = :ttl");
+            names.put("#ttl", "ttl");
+            values.put(":ttl", AttributeValue.builder().n(String.valueOf(ttlEpoch)).build());
+        }
+
+        var updateBuilder = Update.builder()
+            .tableName(tableName)
+            .key(Map.of(
+                "PK", AttributeValue.builder().s(pk).build(),
+                "SK", AttributeValue.builder().s(sk).build()
+            ))
+            .updateExpression(expr.toString())
+            .expressionAttributeValues(values);
+        if (!names.isEmpty()) {
+            updateBuilder.expressionAttributeNames(names);
+        }
 
         return TransactWriteItem.builder()
-            .update(Update.builder()
-                .tableName(tableName)
-                .key(Map.of(
-                    "PK", AttributeValue.builder().s(pk).build(),
-                    "SK", AttributeValue.builder().s(sk).build()
-                ))
-                .updateExpression(expr.toString())
-                .expressionAttributeValues(values)
-                .build())
+            .update(updateBuilder.build())
             .build();
     }
 
