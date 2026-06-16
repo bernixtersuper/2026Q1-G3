@@ -1,280 +1,150 @@
 package com.menudigital.application.analytics;
 
 import com.menudigital.application.shared.TenantContext;
-import com.menudigital.domain.analytics.AnalyticsDashboardResponse;
+import com.menudigital.domain.analytics.*;
 import com.menudigital.domain.analytics.AnalyticsDashboardResponse.*;
-import com.menudigital.domain.analytics.AnalyticsRepository;
-import com.menudigital.domain.analytics.EventType;
-import com.menudigital.domain.analytics.InteractionEvent;
 import com.menudigital.domain.menu.MenuItem;
 import com.menudigital.domain.menu.MenuRepository;
-import com.menudigital.domain.menu.MenuSection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.time.*;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * @deprecated Prefer {@link GetAnalyticsSummaryUseCase}, {@link GetAnalyticsMenuUseCase},
+ *             {@link GetAnalyticsOperationsUseCase}. Reads Dynamo aggregates, not raw events.
+ */
 @ApplicationScoped
+@Deprecated
 public class GetMenuAnalyticsUseCase {
-    
+
+    private static final String[] DAY_NAMES = {
+        "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
+    };
+
     @Inject
-    AnalyticsRepository analyticsRepository;
-    
+    AnalyticsAggregateReadRepository aggregateReadRepository;
+
     @Inject
     MenuRepository menuRepository;
-    
+
     @Inject
     TenantContext tenantContext;
-    
+
     public AnalyticsDashboardResponse execute() {
         String tenantId = tenantContext.getTenantId().toString();
-        LocalDate today = LocalDate.now();
-        Instant thirtyDaysAgo = today.minusDays(30).atStartOfDay(ZoneId.systemDefault()).toInstant();
-        Instant now = Instant.now();
-        Instant todayStart = today.atStartOfDay(ZoneId.systemDefault()).toInstant();
-        
-        List<InteractionEvent> allEvents = analyticsRepository.findByTenantAndPeriod(tenantId, thirtyDaysAgo, now);
-        
-        long totalMenuViewsLast30Days = countByEventType(allEvents, EventType.MENU_VIEW);
-        
-        long totalMenuViewsToday = allEvents.stream()
-            .filter(e -> e.eventType() == EventType.MENU_VIEW)
-            .filter(e -> e.timestamp().isAfter(todayStart))
-            .count();
-        
-        long uniqueSessionsLast30Days = allEvents.stream()
-            .map(InteractionEvent::sessionId)
-            .distinct()
-            .count();
-        
-        double avgSessionDepth = calculateAvgSessionDepth(allEvents);
-        
-        List<DailyViewCount> dailyViews = calculateDailyViews(allEvents, today);
-        
-        Map<String, Map<Integer, Long>> hourlyHeatmap = calculateHourlyHeatmap(allEvents);
-        
-        Map<String, Long> filterUsage = calculateFilterUsage(allEvents);
-        
-        int peakHourOfDay = findPeakHour(allEvents);
-        String peakDayOfWeek = findPeakDayOfWeek(allEvents);
-        
-        List<ItemAnalytics> topItems = calculateTopItems(allEvents, tenantId, totalMenuViewsLast30Days, thirtyDaysAgo, now);
-        
-        List<SectionAnalytics> sectionEngagement = calculateSectionEngagement(allEvents);
-        
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        LocalDate fromDate = today.minusDays(29);
+
+        var days = aggregateReadRepository.queryDays(tenantId, fromDate, today);
+        Map<LocalDate, AnalyticsAggregateReadRepository.DayAggregate> dayMap = days.stream()
+            .collect(Collectors.toMap(AnalyticsAggregateReadRepository.DayAggregate::date, d -> d));
+
+        long totalMenuViewsLast30Days = days.stream().mapToLong(AnalyticsAggregateReadRepository.DayAggregate::menuViews).sum();
+        long totalMenuViewsToday = dayMap.getOrDefault(today, emptyDay(today)).menuViews();
+
+        var hours = aggregateReadRepository.queryHours(
+            tenantId,
+            today.minusDays(7).atStartOfDay(zone).toInstant(),
+            today.plusDays(1).atStartOfDay(zone).toInstant()
+        );
+
+        List<DailyViewCount> dailyViews = new ArrayList<>();
+        for (int i = 29; i >= 0; i--) {
+            LocalDate date = today.minusDays(i);
+            var d = dayMap.getOrDefault(date, emptyDay(date));
+            dailyViews.add(new DailyViewCount(date, d.menuViews(), d.itemViews()));
+        }
+
+        Map<String, Map<Integer, Long>> hourlyHeatmap = buildViewsHeatmap(hours);
+        int peakHourOfDay = findPeakHour(hours);
+        String peakDayOfWeek = findPeakDay(hours);
+
+        List<ItemAnalytics> topItems = buildTopItems(tenantId, totalMenuViewsLast30Days);
+
         return new AnalyticsDashboardResponse(
             totalMenuViewsLast30Days,
             totalMenuViewsToday,
-            uniqueSessionsLast30Days,
-            avgSessionDepth,
+            0L,
+            0.0,
             dailyViews,
             hourlyHeatmap,
             topItems,
-            sectionEngagement,
-            filterUsage,
+            List.of(),
+            Map.of(),
             peakHourOfDay,
             peakDayOfWeek
         );
     }
-    
-    private long countByEventType(List<InteractionEvent> events, EventType type) {
-        return events.stream().filter(e -> e.eventType() == type).count();
+
+    private AnalyticsAggregateReadRepository.DayAggregate emptyDay(LocalDate date) {
+        return new AnalyticsAggregateReadRepository.DayAggregate(date, 0, 0, 0, null, null);
     }
-    
-    private double calculateAvgSessionDepth(List<InteractionEvent> events) {
-        Map<String, Set<String>> sessionToItems = new HashMap<>();
-        
-        for (InteractionEvent event : events) {
-            if (event.itemId() != null && !event.itemId().isBlank()) {
-                sessionToItems
-                    .computeIfAbsent(event.sessionId(), k -> new HashSet<>())
-                    .add(event.itemId());
-            }
-        }
-        
-        if (sessionToItems.isEmpty()) {
-            return 0.0;
-        }
-        
-        double totalDepth = sessionToItems.values().stream()
-            .mapToInt(Set::size)
-            .sum();
-        
-        return Math.round(totalDepth / sessionToItems.size() * 10.0) / 10.0;
-    }
-    
-    private List<DailyViewCount> calculateDailyViews(List<InteractionEvent> events, LocalDate today) {
-        Map<LocalDate, Long> menuViewsByDate = new HashMap<>();
-        Map<LocalDate, Long> itemViewsByDate = new HashMap<>();
-        
-        for (InteractionEvent event : events) {
-            LocalDate date = event.timestamp().atZone(ZoneId.systemDefault()).toLocalDate();
-            if (event.eventType() == EventType.MENU_VIEW) {
-                menuViewsByDate.merge(date, 1L, Long::sum);
-            } else if (event.eventType() == EventType.ITEM_VIEW) {
-                itemViewsByDate.merge(date, 1L, Long::sum);
-            }
-        }
-        
-        List<DailyViewCount> result = new ArrayList<>();
-        for (int i = 29; i >= 0; i--) {
-            LocalDate date = today.minusDays(i);
-            result.add(new DailyViewCount(
-                date,
-                menuViewsByDate.getOrDefault(date, 0L),
-                itemViewsByDate.getOrDefault(date, 0L)
-            ));
-        }
-        
-        return result;
-    }
-    
-    private Map<String, Map<Integer, Long>> calculateHourlyHeatmap(List<InteractionEvent> events) {
+
+    private Map<String, Map<Integer, Long>> buildViewsHeatmap(
+            List<AnalyticsAggregateReadRepository.HourAggregate> hours) {
         Map<String, Map<Integer, Long>> heatmap = new LinkedHashMap<>();
-        String[] days = {"MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"};
-        
-        for (String day : days) {
+        for (String day : DAY_NAMES) {
             Map<Integer, Long> hourMap = new LinkedHashMap<>();
-            for (int h = 0; h < 24; h++) {
-                hourMap.put(h, 0L);
-            }
+            for (int h = 0; h < 24; h++) hourMap.put(h, 0L);
             heatmap.put(day, hourMap);
         }
-        
-        for (InteractionEvent event : events) {
-            ZonedDateTime zdt = event.timestamp().atZone(ZoneId.systemDefault());
-            String dayOfWeek = zdt.getDayOfWeek().name();
-            int hour = zdt.getHour();
-            
-            heatmap.get(dayOfWeek).merge(hour, 1L, Long::sum);
+        for (var hour : hours) {
+            var zdt = hour.bucketStart().atZone(ZoneId.systemDefault());
+            String dayName = zdt.getDayOfWeek().name();
+            heatmap.get(dayName).merge(zdt.getHour(), hour.menuViews() + hour.itemViews(), Long::sum);
         }
-        
         return heatmap;
     }
-    
-    private Map<String, Long> calculateFilterUsage(List<InteractionEvent> events) {
-        return events.stream()
-            .filter(e -> e.eventType() == EventType.FILTER_USED)
-            .filter(e -> e.metadata() != null && e.metadata().containsKey("filter"))
+
+    private int findPeakHour(List<AnalyticsAggregateReadRepository.HourAggregate> hours) {
+        return hours.stream()
             .collect(Collectors.groupingBy(
-                e -> e.metadata().get("filter"),
-                Collectors.counting()
-            ));
-    }
-    
-    private int findPeakHour(List<InteractionEvent> events) {
-        Map<Integer, Long> hourCounts = events.stream()
-            .collect(Collectors.groupingBy(
-                e -> e.timestamp().atZone(ZoneId.systemDefault()).getHour(),
-                Collectors.counting()
-            ));
-        
-        return hourCounts.entrySet().stream()
+                h -> h.bucketStart().atZone(ZoneId.systemDefault()).getHour(),
+                Collectors.summingLong(h -> h.menuViews() + h.itemViews())
+            ))
+            .entrySet().stream()
             .max(Map.Entry.comparingByValue())
             .map(Map.Entry::getKey)
             .orElse(12);
     }
-    
-    private String findPeakDayOfWeek(List<InteractionEvent> events) {
-        Map<DayOfWeek, Long> dayCounts = events.stream()
+
+    private String findPeakDay(List<AnalyticsAggregateReadRepository.HourAggregate> hours) {
+        return hours.stream()
             .collect(Collectors.groupingBy(
-                e -> e.timestamp().atZone(ZoneId.systemDefault()).getDayOfWeek(),
-                Collectors.counting()
-            ));
-        
-        return dayCounts.entrySet().stream()
+                h -> h.bucketStart().atZone(ZoneId.systemDefault()).getDayOfWeek(),
+                Collectors.summingLong(h -> h.menuViews() + h.itemViews())
+            ))
+            .entrySet().stream()
             .max(Map.Entry.comparingByValue())
             .map(e -> e.getKey().name())
             .orElse("SATURDAY");
     }
-    
-    private List<ItemAnalytics> calculateTopItems(
-            List<InteractionEvent> events, 
-            String tenantId,
-            long totalMenuViews,
-            Instant thirtyDaysAgo,
-            Instant now
-    ) {
-        Map<String, Long> itemViewCounts = events.stream()
-            .filter(e -> e.eventType() == EventType.ITEM_VIEW)
-            .filter(e -> e.itemId() != null && !e.itemId().isBlank())
-            .collect(Collectors.groupingBy(InteractionEvent::itemId, Collectors.counting()));
-        
-        List<Map.Entry<String, Long>> topItemEntries = itemViewCounts.entrySet().stream()
-            .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+
+    private List<ItemAnalytics> buildTopItems(String tenantId, long totalMenuViews) {
+        var items = aggregateReadRepository.queryItems(tenantId).stream()
+            .sorted(Comparator.comparingLong(AnalyticsAggregateReadRepository.ItemAggregate::views).reversed())
             .limit(10)
             .toList();
-        
-        if (topItemEntries.isEmpty()) {
-            return List.of();
-        }
-        
-        List<UUID> itemIds = topItemEntries.stream()
-            .map(e -> UUID.fromString(e.getKey()))
+
+        if (items.isEmpty()) return List.of();
+
+        List<UUID> itemIds = items.stream()
+            .map(i -> UUID.fromString(i.itemId()))
             .toList();
-        
         Map<String, MenuItem> itemsById = menuRepository.findItemsByIds(itemIds).stream()
-            .collect(Collectors.toMap(
-                item -> item.getId().toString(),
-                Function.identity()
-            ));
-        
-        Instant sevenDaysAgo = now.minus(Duration.ofDays(7));
-        Instant fourteenDaysAgo = now.minus(Duration.ofDays(14));
-        
-        Map<String, Long> last7dCounts = events.stream()
-            .filter(e -> e.eventType() == EventType.ITEM_VIEW)
-            .filter(e -> e.itemId() != null)
-            .filter(e -> e.timestamp().isAfter(sevenDaysAgo))
-            .collect(Collectors.groupingBy(InteractionEvent::itemId, Collectors.counting()));
-        
-        Map<String, Long> prior7dCounts = events.stream()
-            .filter(e -> e.eventType() == EventType.ITEM_VIEW)
-            .filter(e -> e.itemId() != null)
-            .filter(e -> e.timestamp().isAfter(fourteenDaysAgo) && e.timestamp().isBefore(sevenDaysAgo))
-            .collect(Collectors.groupingBy(InteractionEvent::itemId, Collectors.counting()));
-        
-        return topItemEntries.stream()
-            .map(entry -> {
-                String itemId = entry.getKey();
-                long viewCount = entry.getValue();
-                MenuItem item = itemsById.get(itemId);
-                String itemName = item != null ? item.getName() : "Unknown Item";
-                
-                double viewRate = totalMenuViews > 0 ? (double) viewCount / totalMenuViews : 0.0;
-                
-                long last7d = last7dCounts.getOrDefault(itemId, 0L);
-                long prior7d = prior7dCounts.getOrDefault(itemId, 0L);
-                boolean trending = prior7d > 0 && last7d > prior7d * 1.5;
-                
-                return new ItemAnalytics(itemId, itemName, viewCount, viewRate, trending);
+            .collect(Collectors.toMap(i -> i.getId().toString(), i -> i));
+
+        return items.stream()
+            .map(i -> {
+                MenuItem item = itemsById.get(i.itemId());
+                String name = item != null ? item.getName() : "Unknown Item";
+                double viewRate = totalMenuViews > 0 ? (double) i.views() / totalMenuViews : 0.0;
+                return new ItemAnalytics(i.itemId(), name, i.views(), viewRate, false);
             })
-            .toList();
-    }
-    
-    private List<SectionAnalytics> calculateSectionEngagement(List<InteractionEvent> events) {
-        Map<String, Long> sectionViewCounts = events.stream()
-            .filter(e -> e.eventType() == EventType.SECTION_VIEW)
-            .filter(e -> e.sectionId() != null && !e.sectionId().isBlank())
-            .collect(Collectors.groupingBy(InteractionEvent::sectionId, Collectors.counting()));
-        
-        var menu = menuRepository.findByTenantId(tenantContext.getTenantId());
-        Map<String, String> sectionNames = menu.getSections().stream()
-            .collect(Collectors.toMap(
-                s -> s.getId().toString(),
-                MenuSection::getName
-            ));
-        
-        return sectionViewCounts.entrySet().stream()
-            .map(entry -> new SectionAnalytics(
-                entry.getKey(),
-                sectionNames.getOrDefault(entry.getKey(), "Unknown Section"),
-                entry.getValue()
-            ))
-            .sorted((a, b) -> Long.compare(b.viewCount(), a.viewCount()))
             .toList();
     }
 }

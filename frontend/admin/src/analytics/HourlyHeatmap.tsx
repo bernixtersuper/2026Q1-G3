@@ -2,6 +2,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 
 interface HourlyHeatmapProps {
   data: Record<string, Record<number, number>>;
+  title?: string;
+  description?: string;
+  unitLabel?: string;
 }
 
 const dayOrder = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
@@ -15,10 +18,24 @@ const dayLabels: Record<string, string> = {
   SUNDAY: 'Sun',
 };
 
+const dayAliases: Record<string, string> = {
+  Monday: 'MONDAY',
+  Tuesday: 'TUESDAY',
+  Wednesday: 'WEDNESDAY',
+  Thursday: 'THURSDAY',
+  Friday: 'FRIDAY',
+  Saturday: 'SATURDAY',
+  Sunday: 'SUNDAY',
+};
+
+function normalizeDayKey(day: string): string {
+  return dayAliases[day] ?? day.toUpperCase();
+}
+
 function getColor(value: number, max: number): string {
   if (max === 0) return 'bg-slate-50';
   const intensity = value / max;
-  
+
   if (intensity === 0) return 'bg-slate-50';
   if (intensity < 0.2) return 'bg-purple-100';
   if (intensity < 0.4) return 'bg-purple-200';
@@ -27,13 +44,29 @@ function getColor(value: number, max: number): string {
   return 'bg-purple-500';
 }
 
-export function HourlyHeatmap({ data }: HourlyHeatmapProps) {
+export function normalizeHeatmapDays(
+  data: Record<string, Record<number, number>>
+): Record<string, Record<number, number>> {
+  const normalized: Record<string, Record<number, number>> = {};
+  Object.entries(data).forEach(([day, hours]) => {
+    normalized[normalizeDayKey(day)] = hours;
+  });
+  return normalized;
+}
+
+export function HourlyHeatmap({
+  data,
+  title = 'Activity Heatmap',
+  description = 'Activity by hour of day and day of week',
+  unitLabel = 'events',
+}: HourlyHeatmapProps) {
+  const normalized = normalizeHeatmapDays(data);
   const hours = Array.from({ length: 24 }, (_, i) => i);
-  
+
   let maxValue = 0;
   dayOrder.forEach((day) => {
-    if (data[day]) {
-      Object.values(data[day]).forEach((v) => {
+    if (normalized[day]) {
+      Object.values(normalized[day]).forEach((v) => {
         if (v > maxValue) maxValue = v;
       });
     }
@@ -42,8 +75,8 @@ export function HourlyHeatmap({ data }: HourlyHeatmapProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Activity Heatmap</CardTitle>
-        <CardDescription>Activity by hour of day and day of week</CardDescription>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -68,12 +101,12 @@ export function HourlyHeatmap({ data }: HourlyHeatmapProps) {
                 </div>
                 <div className="flex-1 flex gap-0.5">
                   {hours.map((hour) => {
-                    const value = data[day]?.[hour] || 0;
+                    const value = normalized[day]?.[hour] || 0;
                     return (
                       <div
                         key={hour}
                         className={`flex-1 h-8 rounded-sm transition-colors ${getColor(value, maxValue)}`}
-                        title={`${dayLabels[day]} ${hour}:00 - ${value} events`}
+                        title={`${dayLabels[day]} ${hour}:00 - ${value} ${unitLabel}`}
                       />
                     );
                   })}

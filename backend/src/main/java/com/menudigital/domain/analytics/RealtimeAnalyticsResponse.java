@@ -5,8 +5,14 @@ import java.util.List;
 
 public record RealtimeAnalyticsResponse(
     List<BucketCount> buckets,
-    long totalLast5Min,
-    long totalLast60Min
+    long totalEventsLast5Min,
+    long totalEventsLast60Min,
+    long totalOrdersLast5Min,
+    long totalOrdersLast60Min
 ) {
-    public record BucketCount(Instant bucketStart, long count) {}
+    public record BucketCount(
+        Instant bucketStart,
+        long eventCount,
+        long orderCount
+    ) {}
 }

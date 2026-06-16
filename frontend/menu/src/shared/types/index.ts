@@ -94,10 +94,18 @@ export interface SelectedModifierResponse {
 
 export type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'BILL_REQUESTED' | 'CANCELLED';
 
-export type EventType = 'MENU_VIEW' | 'ITEM_VIEW' | 'SECTION_VIEW' | 'FILTER_USED';
+export type EventType =
+  | 'MENU_VIEW'
+  | 'ITEM_VIEW'
+  | 'SECTION_VIEW'
+  | 'FILTER_USED'
+  | 'FILTER_APPLIED'
+  | 'CART_ITEM_ADDED'
+  | 'CART_ITEM_REMOVED';
 
 export interface RecordEventRequest {
   eventType: EventType;
+  eventId?: string;
   itemId?: string;
   sectionId?: string;
   sessionId: string;

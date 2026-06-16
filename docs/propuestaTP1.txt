@@ -21,15 +21,20 @@ un panel web y los clientes acceden al menú mediante un código QR desde su cel
 instalar aplicaciones. Además, la plataforma recopilará datos de interacción para generar analítica útil
 para el negocio.
 Funcionalidades Clave:
+
 Panel de administración del menú: interfaz web donde el restaurante podrá crear secciones, agregar
 platos con descripción, precio e imagen, y marcar productos como disponibles o agotados. Los cambios
 se publicarán inmediatamente en el menú digital.​
+
 Menú interactivo mediante QR: cada restaurante tendrá un QR único que dirige al menú digital accesible
 desde cualquier navegador móvil, mostrando fotos, descripciones e ingredientes sin requerir registro.​
+
 Filtros por restricciones alimentarias: los platos podrán etiquetarse como vegetarianos, veganos, sin
 gluten u otras categorías, permitiendo a los clientes filtrar la carta según sus preferencias o necesidades.​
+
 Analítica de interacción: la plataforma registrará métricas como visitas al menú, platos más consultados y
 horarios de mayor actividad, presentándolas en un panel simple para el restaurante.​
+
 Segmentación mediante aprendizaje automático: un modelo de clustering analizará patrones de
 navegación para identificar segmentos de clientes y mostrar tendencias de consumo de manera
 comprensible para el dueño del local.

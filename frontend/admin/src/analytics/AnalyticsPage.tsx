@@ -1,17 +1,33 @@
 import { useQuery } from '@tanstack/react-query';
 import { analyticsApi } from '@/shared/api/analyticsApi';
 import { KpiCards } from './KpiCards';
-import { DailyViewsChart } from './DailyViewsChart';
 import { HourlyHeatmap } from './HourlyHeatmap';
+import { TopSoldTable } from './TopSoldTable';
+import { ViewedVsSoldMatrix } from './ViewedVsSoldMatrix';
 import { ItemRankingTable } from './ItemRankingTable';
-import { FilterUsageChart } from './FilterUsageChart';
-import { SectionEngagementChart } from './SectionEngagementChart';
 import { RealtimePanel } from './RealtimePanel';
+import { DailyViewsChart } from './DailyViewsChart';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { ItemAnalytics } from '@/shared/types';
 
 export function AnalyticsPage() {
-  const { data: analytics, isLoading } = useQuery({
-    queryKey: ['analytics'],
+  const { data: summary, isLoading: summaryLoading } = useQuery({
+    queryKey: ['analytics', 'summary'],
+    queryFn: analyticsApi.getSummary,
+  });
+
+  const { data: menu } = useQuery({
+    queryKey: ['analytics', 'menu'],
+    queryFn: analyticsApi.getMenu,
+  });
+
+  const { data: operations } = useQuery({
+    queryKey: ['analytics', 'operations'],
+    queryFn: analyticsApi.getOperations,
+  });
+
+  const { data: legacy } = useQuery({
+    queryKey: ['analytics', 'legacy'],
     queryFn: analyticsApi.getDashboard,
   });
 
@@ -21,7 +37,7 @@ export function AnalyticsPage() {
     refetchInterval: 30000,
   });
 
-  if (isLoading) {
+  if (summaryLoading) {
     return (
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">Analytics</h1>
@@ -30,44 +46,65 @@ export function AnalyticsPage() {
             <Skeleton key={i} className="h-32" />
           ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-        </div>
+        <Skeleton className="h-80" />
       </div>
     );
   }
 
-  if (!analytics) {
+  if (!summary) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground">No analytics data available yet.</p>
+        <p className="text-muted-foreground">No hay datos de analytics todavía.</p>
         <p className="text-sm text-muted-foreground mt-2">
-          Analytics will appear once customers start viewing your menu.
+          Los datos aparecerán cuando los clientes usen el menú o realicen pedidos.
         </p>
       </div>
     );
   }
 
+  const topViewedAsLegacy: ItemAnalytics[] = (menu?.topViewedItems ?? []).map((item) => ({
+    itemId: item.itemId,
+    itemName: item.itemName,
+    viewCount: item.viewCount,
+    viewRate: 0,
+    trending: false,
+  }));
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Analytics</h1>
 
-      <KpiCards data={analytics} />
+      <KpiCards data={summary} />
+
+      {operations && (
+        <HourlyHeatmap
+          data={operations.ordersHeatmap}
+          title="Heatmap de pedidos"
+          description="Pedidos por hora y día de la semana (últimos 7 días)"
+          unitLabel="pedidos"
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <DailyViewsChart data={analytics.dailyViews} />
-        <RealtimePanel data={realtime} />
+        <TopSoldTable data={menu?.topSoldItems ?? []} />
+        <ViewedVsSoldMatrix data={menu?.viewedVsSold ?? []} />
       </div>
 
-      <HourlyHeatmap data={analytics.hourlyHeatmap} />
+      <RealtimePanel data={realtime} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ItemRankingTable data={analytics.topItems} />
-        <FilterUsageChart data={analytics.filterUsage} />
+        <ItemRankingTable data={topViewedAsLegacy} />
+        {legacy && <DailyViewsChart data={legacy.dailyViews} />}
       </div>
 
-      <SectionEngagementChart data={analytics.sectionEngagement} />
+      {operations && (
+        <HourlyHeatmap
+          data={operations.viewsHeatmap}
+          title="Heatmap de vistas"
+          description="Vistas de menú por hora (capa secundaria)"
+          unitLabel="vistas"
+        />
+      )}
     </div>
   );
 }

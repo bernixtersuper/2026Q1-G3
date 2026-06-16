@@ -8,6 +8,7 @@ import java.util.Map;
 
 public record RecordEventCommand(
     @NotNull EventType eventType,
+    String eventId,
     String itemId,
     String sectionId,
     @NotBlank String sessionId,

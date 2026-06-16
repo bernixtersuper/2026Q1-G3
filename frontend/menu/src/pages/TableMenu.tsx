@@ -102,7 +102,52 @@ function TableMenuContent({ data, qrToken }: { data: TableMenuResponse; qrToken:
     return searchFiltered.filter((section) => section.id === selectedCategoryId);
   }, [data.sections, isCategoryFilterEnabled, searchQuery, selectedCategoryId]);
 
-  const handleItemClick = (itemId: string) => {
+  const firedSections = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const observers: IntersectionObserver[] = [];
+    const sectionElements = document.querySelectorAll('[data-section-id]');
+
+    sectionElements.forEach((element) => {
+      const sectionId = element.getAttribute('data-section-id');
+      if (!sectionId) return;
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting && !firedSections.current.has(sectionId)) {
+              firedSections.current.add(sectionId);
+              menuApi.recordEvent(data.slug, {
+                eventType: 'SECTION_VIEW',
+                sectionId,
+                sessionId,
+                metadata: { source: 'TABLE_QR' },
+              }).catch(() => {});
+            }
+          });
+        },
+        { threshold: 0.5 }
+      );
+
+      observer.observe(element);
+      observers.push(observer);
+    });
+
+    return () => observers.forEach((observer) => observer.disconnect());
+  }, [data.slug, data.sections, sessionId]);
+
+  const handleItemClick = (itemId: string, sectionId: string) => {
+    if (sessionId) {
+      menuApi.recordEvent(data.slug, {
+        eventType: 'ITEM_VIEW',
+        itemId,
+        sectionId,
+        sessionId,
+        metadata: { source: 'TABLE_QR' },
+      }).catch(() => {});
+    }
     const item = data.sections
       .flatMap(s => s.items)
       .find(i => i.id === itemId);
@@ -392,7 +437,7 @@ export function TableMenu() {
   return (
     <ThemeProvider theme={data.theme}>
       <ToastProvider>
-        <OrderProvider>
+        <OrderProvider restaurantSlug={data.slug}>
           <TableMenuContent data={data} qrToken={qrToken!} />
         </OrderProvider>
       </ToastProvider>

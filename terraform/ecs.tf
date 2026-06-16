@@ -61,6 +61,7 @@ resource "aws_ecs_task_definition" "backend" {
       { name = "AWS_REGION", value = data.aws_region.current.region },
       { name = "S3_BUCKET", value = local.images_bucket_name },
       { name = "DYNAMO_TABLE", value = aws_dynamodb_table.menuqr_events.name },
+      { name = "DYNAMO_ANALYTICS_TABLE", value = aws_dynamodb_table.menuqr_analytics.name },
       { name = "QUARKUS_PROFILE", value = "prod" },
       { name = "RECOMMENDATIONS_MODEL_S3_BUCKET", value = local.ml_bucket_name },
       { name = "COGNITO_ISSUER_URL", value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}" },

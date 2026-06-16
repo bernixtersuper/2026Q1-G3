@@ -22,10 +22,22 @@ public record InteractionEvent(
             String sessionId,
             Map<String, String> metadata
     ) {
+        return create(null, tenantId, eventType, itemId, sectionId, sessionId, metadata);
+    }
+
+    public static InteractionEvent create(
+            String eventId,
+            String tenantId,
+            EventType eventType,
+            String itemId,
+            String sectionId,
+            String sessionId,
+            Map<String, String> metadata
+    ) {
         return new InteractionEvent(
-            UUID.randomUUID().toString(),
+            eventId != null && !eventId.isBlank() ? eventId : UUID.randomUUID().toString(),
             tenantId,
-            eventType,
+            eventType.normalized(),
             itemId,
             sectionId,
             sessionId,

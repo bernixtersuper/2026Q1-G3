@@ -45,6 +45,8 @@ flowchart TB
 
 ## A. Analytics y DynamoDB *(feedback del corrector — Prioridad 1)*
 
+> **Evolución:** arquitectura target en [analytics-rediseno.md](./analytics-rediseno.md) — pipeline Kinesis → S3 + **Dynamo agregados** (eventos) + **RDS** (pedidos) + Athena. Esta sección §A describe el MVP inmediato si se implementa agregados antes del pipeline completo.
+
 ### Problema actual
 
 El esquema `PK=TENANT#… / SK=EVENT#timestamp#id` funciona para escritura, pero las consultas del dashboard:

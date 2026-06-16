@@ -13,6 +13,7 @@ import java.time.temporal.ChronoUnit;
 @Path("/api/v1/analytics")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@Deprecated
 public class AnalyticsController {
 
     @Inject

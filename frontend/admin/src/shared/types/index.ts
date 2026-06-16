@@ -46,6 +46,54 @@ export interface AnalyticsDashboard {
   peakDayOfWeek: string;
 }
 
+export interface AnalyticsSummary {
+  period: string;
+  ordersToday: number;
+  ordersYesterday: number;
+  revenueToday: number;
+  avgTicket: number;
+  menuViewsToday: number;
+  menuViewsYesterday: number;
+  conversionRate: number | null;
+  conversionStatus: 'PRELIMINARY' | 'FINAL';
+  conversionNote: string | null;
+  activeTables: number;
+  peakHourToday: number | null;
+}
+
+export interface AnalyticsMenuData {
+  topSoldItems: TopSoldItem[];
+  topViewedItems: TopViewedItem[];
+  viewedVsSold: ViewedVsSoldItem[];
+}
+
+export interface TopSoldItem {
+  itemId: string;
+  itemName: string;
+  quantitySold: number;
+  revenue: number;
+}
+
+export interface TopViewedItem {
+  itemId: string;
+  itemName: string;
+  viewCount: number;
+}
+
+export interface ViewedVsSoldItem {
+  itemId: string;
+  itemName: string;
+  viewCount: number;
+  quantitySold: number;
+}
+
+export interface AnalyticsOperations {
+  ordersHeatmap: Record<string, Record<number, number>>;
+  viewsHeatmap: Record<string, Record<number, number>>;
+  peakHourToday: number | null;
+  activeTables: number;
+}
+
 export interface DailyViewCount {
   date: string;
   menuViews: number;
@@ -68,13 +116,16 @@ export interface SectionAnalytics {
 
 export interface RealtimeAnalytics {
   buckets: BucketCount[];
-  totalLast5Min: number;
-  totalLast60Min: number;
+  totalEventsLast5Min: number;
+  totalEventsLast60Min: number;
+  totalOrdersLast5Min: number;
+  totalOrdersLast60Min: number;
 }
 
 export interface BucketCount {
   bucketStart: string;
-  count: number;
+  eventCount: number;
+  orderCount: number;
 }
 
 export interface SessionResponse {

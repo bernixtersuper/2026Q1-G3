@@ -1,5 +1,6 @@
 package com.menudigital.interfaces.rest.public_;
 
+import com.menudigital.application.analytics.PublishOrderAnalyticsUseCase;
 import com.menudigital.application.order.OrderEventBroadcaster;
 import com.menudigital.domain.menu.Menu;
 import com.menudigital.domain.menu.MenuItem;
@@ -57,6 +58,9 @@ public class TableOrderResource {
     
     @Inject
     OrderEventBroadcaster orderEventBroadcaster;
+
+    @Inject
+    PublishOrderAnalyticsUseCase publishOrderAnalyticsUseCase;
 
     @Inject
     S3ImageStorageService imageStorageService;
@@ -392,7 +396,9 @@ public class TableOrderResource {
                     }
                     order.submit();
                     orderRepository.update(order);
-                    
+                    order.setItems(orderRepository.findItemsByOrderId(order.getId()));
+                    publishOrderAnalyticsUseCase.publishOrderSubmitted(order);
+
                     return Response.ok(toOrderResponse(order)).build();
                 } catch (IllegalStateException e) {
                     return Response.status(Response.Status.BAD_REQUEST)

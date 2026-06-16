@@ -4,7 +4,7 @@ import { useTheme } from '@/lib/ThemeContext';
 
 interface MenuSectionProps {
   section: MenuSectionType;
-  onItemClick: (itemId: string) => void;
+  onItemClick: (itemId: string, sectionId: string) => void;
   onQuickAdd?: (itemId: string, name: string, price: string) => void;
 }
 
@@ -12,7 +12,7 @@ export function MenuSection({ section, onItemClick, onQuickAdd }: MenuSectionPro
   const { theme } = useTheme();
 
   return (
-    <section id={`section-${section.id}`} className="mb-8">
+    <section id={`section-${section.id}`} data-section-id={section.id} className="mb-8">
       {/* Section Header */}
       <div className="mx-auto max-w-3xl px-4 py-4">
         <h2 
@@ -39,7 +39,7 @@ export function MenuSection({ section, onItemClick, onQuickAdd }: MenuSectionPro
               )}
               <MenuItemCard 
                 item={item} 
-                onClick={() => onItemClick(item.id)}
+                onClick={() => onItemClick(item.id, section.id)}
                 onQuickAdd={onQuickAdd ? () => onQuickAdd(item.id, item.name, item.price) : undefined}
               />
             </div>

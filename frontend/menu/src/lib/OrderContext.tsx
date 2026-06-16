@@ -16,7 +16,7 @@ interface OrderContextValue {
   setOrder: (order: OrderResponse | null) => void;
   addItem: (qrToken: string, menuItemId: string, name: string, price: string, quantity: number, notes?: string, guestName?: string, selectedModifierIds?: string[]) => Promise<void>;
   updateQuantity: (qrToken: string, itemId: string, quantity: number) => Promise<void>;
-  removeItem: (qrToken: string, itemId: string) => Promise<void>;
+  removeItem: (qrToken: string, itemId: string, menuItemId?: string) => Promise<void>;
   submitOrder: (qrToken: string, notes?: string) => Promise<void>;
   requestBill: (qrToken: string) => Promise<void>;
   getItemCount: () => number;
@@ -32,7 +32,7 @@ export function useOrder() {
   return ctx;
 }
 
-export function OrderProvider({ children }: { children: ReactNode }) {
+export function OrderProvider({ children, restaurantSlug }: { children: ReactNode; restaurantSlug?: string }) {
   const { showToast } = useToast();
   const [order, setOrder] = useState<OrderResponse | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -109,9 +109,17 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       if (!sessionId) throw new Error('No session');
       return menuApi.addItem(qrToken, sessionId, menuItemId, quantity, notes, guestName, selectedModifierIds);
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       setOrder(data);
       showToast('Added to order', 'success');
+      if (restaurantSlug && sessionId) {
+        menuApi.recordEvent(restaurantSlug, {
+          eventType: 'CART_ITEM_ADDED',
+          itemId: variables.menuItemId,
+          sessionId,
+          metadata: { source: 'TABLE_QR' },
+        }).catch(() => {});
+      }
     },
     onError: () => showToast('Failed to add item', 'error'),
   });
@@ -130,15 +138,23 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   });
 
   const removeItemMutation = useMutation({
-    mutationFn: async ({ qrToken, itemId }: { qrToken: string; itemId: string }) => {
+    mutationFn: async ({ qrToken, itemId, menuItemId }: { qrToken: string; itemId: string; menuItemId?: string }) => {
       if (!sessionId) throw new Error('No session');
       await menuApi.removeItem(qrToken, itemId, sessionId);
       const updatedOrder = await menuApi.getOrder(qrToken, sessionId);
-      return updatedOrder;
+      return { order: updatedOrder, menuItemId };
     },
-    onSuccess: (data) => {
-      setOrder(data);
+    onSuccess: ({ order: updatedOrder, menuItemId }) => {
+      setOrder(updatedOrder);
       showToast('Item removed', 'info');
+      if (restaurantSlug && sessionId && menuItemId) {
+        menuApi.recordEvent(restaurantSlug, {
+          eventType: 'CART_ITEM_REMOVED',
+          itemId: menuItemId,
+          sessionId,
+          metadata: { source: 'TABLE_QR' },
+        }).catch(() => {});
+      }
     },
     onError: () => showToast('Failed to remove item', 'error'),
   });
@@ -194,8 +210,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     await updateQuantityMutation.mutateAsync({ qrToken, itemId, quantity });
   }, [updateQuantityMutation]);
 
-  const removeItem = useCallback(async (qrToken: string, itemId: string) => {
-    await removeItemMutation.mutateAsync({ qrToken, itemId });
+  const removeItem = useCallback(async (qrToken: string, itemId: string, menuItemId?: string) => {
+    await removeItemMutation.mutateAsync({ qrToken, itemId, menuItemId });
   }, [removeItemMutation]);
 
   const submitOrder = useCallback(async (qrToken: string, notes?: string) => {

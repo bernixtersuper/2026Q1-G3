@@ -40,6 +40,10 @@ public class PublicEventResource {
             return Response.status(Response.Status.NOT_FOUND)
                 .entity(new ErrorResponse("NOT_FOUND", e.getMessage()))
                 .build();
+        } catch (RecordInteractionUseCase.InvalidEventException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new ErrorResponse("INVALID_EVENT", e.getMessage()))
+                .build();
         } catch (Exception e) {
             Log.errorf("Failed to record event - slug: %s, error: %s", slug, e.getMessage(), e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
