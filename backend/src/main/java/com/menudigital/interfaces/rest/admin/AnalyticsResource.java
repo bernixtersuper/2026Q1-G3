@@ -23,9 +23,6 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 public class AnalyticsResource {
 
     @Inject
-    GetMenuAnalyticsUseCase getMenuAnalyticsUseCase;
-
-    @Inject
     GetAnalyticsSummaryUseCase getAnalyticsSummaryUseCase;
 
     @Inject
@@ -37,15 +34,11 @@ public class AnalyticsResource {
     @Inject
     GetRealtimeAnalyticsUseCase getRealtimeAnalyticsUseCase;
 
-    @GET
-    @Operation(summary = "Get analytics dashboard (legacy)", description = "Deprecated — use /summary, /menu, /operations")
-    @APIResponse(responseCode = "200", description = "Analytics data")
-    @APIResponse(responseCode = "401", description = "Unauthorized")
-    @Deprecated
-    public Response getAnalytics() {
-        AnalyticsDashboardResponse response = getMenuAnalyticsUseCase.execute();
-        return Response.ok(response).build();
-    }
+    @Inject
+    GetAnalyticsTrendsUseCase getAnalyticsTrendsUseCase;
+
+    @Inject
+    AnalyticsExportUseCase analyticsExportUseCase;
 
     @GET
     @Path("/summary")
@@ -75,4 +68,29 @@ public class AnalyticsResource {
         RealtimeAnalyticsResponse response = getRealtimeAnalyticsUseCase.execute();
         return Response.ok(response).build();
     }
+
+    @GET
+    @Path("/trends")
+    @Operation(summary = "Historical trends (7–90 days)")
+    public Response getTrends(@QueryParam("days") @DefaultValue("30") int days) {
+        return Response.ok(getAnalyticsTrendsUseCase.execute(days)).build();
+    }
+
+    @POST
+    @Path("/export")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Start async CSV export via Athena")
+    public Response startExport(ExportRequest request) {
+        int days = request != null && request.days() != null ? request.days() : 30;
+        return Response.accepted(analyticsExportUseCase.startExport(days)).build();
+    }
+
+    @GET
+    @Path("/export/{jobId}")
+    @Operation(summary = "Poll async export job status")
+    public Response getExportStatus(@PathParam("jobId") String jobId) {
+        return Response.ok(analyticsExportUseCase.getStatus(jobId)).build();
+    }
+
+    public record ExportRequest(Integer days) {}
 }

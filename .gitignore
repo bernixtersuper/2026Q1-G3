@@ -145,6 +145,7 @@ backend/surefire-reports/
 
 # ML training Lambda build (artefactos locales; regenerar con scripts/build_lambda_dists.sh)
 ml-training/lambda_dist/
+analytics-processor/lambda_dist/
 infrastructure/terraform/.build/
 
 *.terraform

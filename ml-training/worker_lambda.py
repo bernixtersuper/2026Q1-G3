@@ -1,11 +1,11 @@
 """
-Lambda worker (un solo fichero): un mensaje SQS = un tenant; agrega DynamoDB y sube MREC (.bin) a S3.
-Sin sklearn/joblib: la API Java solo consume el binario MREC (ver RecommendationModelLoader).
+Lambda worker: un mensaje SQS = un tenant; lee eventos S3 Parquet y sube MREC (.bin) a S3.
 Handler: worker_lambda.handler
 """
 from __future__ import annotations
 
 import datetime
+import io
 import json
 import os
 import struct
@@ -14,7 +14,11 @@ from collections import defaultdict
 from typing import Any
 
 import boto3
-from botocore.exceptions import ClientError
+
+try:
+    import pyarrow.parquet as pq
+except ImportError:
+    pq = None  # type: ignore
 
 # Clave fija; debe coincidir con RecommendationModelLoader (Java) y recommendations_etl.py.
 MODEL_S3_KEY_PATTERN = "recommendations/{tenantId}/model.bin"
@@ -26,20 +30,8 @@ def aws_region() -> str:
     return os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
 
 
-def events_table() -> str:
-    return os.environ.get("EVENTS_TABLE", "menuqr-events")
-
-
-def pk_attr() -> str:
-    return os.environ.get("DYNAMODB_PK_ATTR", "PK")
-
-
-def sk_attr() -> str:
-    return os.environ.get("DYNAMODB_SK_ATTR", "SK")
-
-
-def dynamodb_client():
-    return boto3.client("dynamodb", region_name=aws_region())
+def analytics_events_bucket() -> str:
+    return (os.environ.get("ANALYTICS_EVENTS_BUCKET") or "").strip()
 
 
 def s3_client():
@@ -51,44 +43,82 @@ def default_source_day_utc() -> str:
     return yesterday.strftime("%Y-%m-%d")
 
 
-def query_item_views_for_day(tenant_id: str, date_str: str) -> dict[str, int]:
-    pk = f"TENANT#{tenant_id}"
-    start_sk = f"EVENT#{date_str}T00:00:00.000Z"
-    end_sk = f"EVENT#{date_str}T23:59:59.999Z"
-    counts: dict[str, int] = defaultdict(int)
-    dynamodb = dynamodb_client()
-    paginator = dynamodb.get_paginator("query")
-    try:
-        for page in paginator.paginate(
-            TableName=events_table(),
-            KeyConditionExpression="#p = :pk AND #s BETWEEN :a AND :b",
-            ExpressionAttributeNames={"#p": pk_attr(), "#s": sk_attr()},
-            ExpressionAttributeValues={
-                ":pk": {"S": pk},
-                ":a": {"S": start_sk},
-                ":b": {"S": end_sk},
-            },
-        ):
-            for item in page.get("Items", []):
-                if item.get("eventType", {}).get("S") != "ITEM_VIEW":
+def read_events_from_s3(tenant_id: str, date_str: str) -> tuple[dict[str, int], dict[str, int]]:
+    """Returns (item_view_counts, order_item_boosts) from Parquet."""
+    bucket = analytics_events_bucket()
+    if not bucket or pq is None:
+        return {}, {}
+
+    year, month, day = date_str.split("-")
+    prefix = f"events/year={year}/month={int(month):02d}/day={int(day):02d}/"
+    view_counts: dict[str, int] = defaultdict(int)
+    order_boosts: dict[str, int] = defaultdict(int)
+    seen_event_ids: set[str] = set()
+    s3 = s3_client()
+
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj.get("Key", "")
+            if not key.endswith(".parquet"):
+                continue
+            body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+            table = pq.read_table(io.BytesIO(body))
+            data = table.to_pydict()
+            n = len(data.get("eventType") or data.get("eventtype") or [])
+            event_types = data.get("eventType") or data.get("eventtype") or [None] * n
+            tenant_ids = data.get("tenantId") or data.get("tenantid") or [None] * n
+            event_ids = data.get("eventId") or data.get("eventid") or [None] * n
+            item_ids = data.get("itemId") or data.get("itemid") or [None] * n
+            metadata_col = data.get("metadata") or [None] * n
+
+            for i in range(n):
+                if tenant_ids[i] != tenant_id:
                     continue
-                iid = item.get("itemId", {}).get("S")
-                if iid:
-                    counts[iid] += 1
-    except ClientError as e:
-        err = e.response.get("Error", {})
-        code = err.get("Code", "")
-        msg = err.get("Message", str(e))
-        print(
-            "ERROR DynamoDB Query. Comprueba región (AWS_REGION), nombre de tabla (EVENTS_TABLE) "
-            f"y que la tabla tenga clave HASH+RANGE con atributos '{pk_attr()}' y '{sk_attr()}'.\n"
-            "  aws dynamodb describe-table --table-name "
-            f"{events_table()} --region {aws_region()}\n"
-            f"  ({code}: {msg})",
-            file=sys.stderr,
+                eid = event_ids[i]
+                if eid and eid in seen_event_ids:
+                    continue
+                if eid:
+                    seen_event_ids.add(eid)
+
+                etype = event_types[i]
+                if etype == "ITEM_VIEW":
+                    iid = item_ids[i]
+                    if iid:
+                        view_counts[str(iid)] += 1
+                elif etype == "ORDER_SUBMITTED":
+                    meta = metadata_col[i] if i < len(metadata_col) else None
+                    item_ids_str = ""
+                    if isinstance(meta, dict):
+                        item_ids_str = str(meta.get("itemIds") or meta.get("itemids") or "")
+                    for iid in item_ids_str.split(","):
+                        iid = iid.strip()
+                        if iid:
+                            order_boosts[iid] += 2
+
+    return dict(view_counts), dict(order_boosts)
+
+
+def query_item_views_from_s3(tenant_id: str, date_str: str) -> dict[str, int]:
+    views, boosts = read_events_from_s3(tenant_id, date_str)
+    if not views and not boosts:
+        return {}
+    combined: dict[str, int] = defaultdict(int)
+    for iid, c in views.items():
+        combined[iid] += c
+    for iid, boost in boosts.items():
+        combined[iid] += boost
+    return dict(combined)
+
+
+def query_item_views(tenant_id: str, date_str: str) -> dict[str, int]:
+    counts = query_item_views_from_s3(tenant_id, date_str)
+    if not counts:
+        raise ValueError(
+            f"No hay eventos en S3 para tenant={tenant_id} day={date_str}. "
+            "Verifica Firehose y el prefijo events/ en el bucket analytics."
         )
-        raise
-    return dict(counts)
+    return counts
 
 
 def _write_utf(buf: bytearray, s: str) -> None:
@@ -115,7 +145,7 @@ def encode_mrec_binary(artifact: dict[str, Any]) -> bytes:
 
 
 def build_artifact_for_tenant(tenant_id: str, date_str: str) -> dict[str, Any]:
-    counts = query_item_views_for_day(tenant_id, date_str)
+    counts = query_item_views(tenant_id, date_str)
     return {
         "artifact_version": MREC_VERSION,
         "trained_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),

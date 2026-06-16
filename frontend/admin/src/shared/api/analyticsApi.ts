@@ -1,18 +1,14 @@
 import { apiClient } from './client';
 import type {
-  AnalyticsDashboard,
+  AnalyticsExportJob,
   AnalyticsMenuData,
   AnalyticsOperations,
   AnalyticsSummary,
+  AnalyticsTrends,
   RealtimeAnalytics,
 } from '../types';
 
 export const analyticsApi = {
-  getDashboard: async (): Promise<AnalyticsDashboard> => {
-    const response = await apiClient.get<AnalyticsDashboard>('/api/admin/analytics');
-    return response.data;
-  },
-
   getSummary: async (): Promise<AnalyticsSummary> => {
     const response = await apiClient.get<AnalyticsSummary>('/api/admin/analytics/summary');
     return response.data;
@@ -30,6 +26,27 @@ export const analyticsApi = {
 
   getRealtime: async (): Promise<RealtimeAnalytics> => {
     const response = await apiClient.get<RealtimeAnalytics>('/api/admin/analytics/realtime');
+    return response.data;
+  },
+
+  getTrends: async (days: number): Promise<AnalyticsTrends> => {
+    const response = await apiClient.get<AnalyticsTrends>('/api/admin/analytics/trends', {
+      params: { days },
+    });
+    return response.data;
+  },
+
+  startExport: async (days: number): Promise<AnalyticsExportJob> => {
+    const response = await apiClient.post<AnalyticsExportJob>('/api/admin/analytics/export', {
+      days,
+    });
+    return response.data;
+  },
+
+  getExportStatus: async (jobId: string): Promise<AnalyticsExportJob> => {
+    const response = await apiClient.get<AnalyticsExportJob>(
+      `/api/admin/analytics/export/${jobId}`
+    );
     return response.data;
   },
 };

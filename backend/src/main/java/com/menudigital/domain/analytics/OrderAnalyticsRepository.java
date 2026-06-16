@@ -4,6 +4,7 @@ import com.menudigital.domain.tenant.TenantId;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,7 +29,11 @@ public interface OrderAnalyticsRepository {
 
     List<RealtimeOrderBucket> orderBuckets(TenantId tenantId, Instant from, Instant to, int bucketMinutes);
 
+    List<DailyOrderStats> dailyStats(TenantId tenantId, LocalDate from, LocalDate to);
+
     record TopSoldItem(String menuItemId, String itemName, long quantitySold, BigDecimal revenue) {}
 
     record RealtimeOrderBucket(Instant bucketStart, long orderCount) {}
+
+    record DailyOrderStats(LocalDate date, long orders, BigDecimal revenue, long distinctSessions) {}
 }

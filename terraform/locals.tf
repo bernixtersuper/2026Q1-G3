@@ -33,7 +33,11 @@ locals {
   ecr_api_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.api"
   ecr_dkr_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.dkr"
 
-  ml_training_root = "${path.module}/../ml-training"
+  ml_training_root         = "${path.module}/../ml-training"
+  analytics_processor_root = "${path.module}/../analytics-processor"
+  analytics_processor_dist = "${local.analytics_processor_root}/lambda_dist/processor"
+
+  analytics_bucket_name = module.s3_analytics.bucket_name
 
   backend_image = "${aws_ecr_repository.backend.repository_url}:${var.backend.image_tag}"
 

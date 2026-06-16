@@ -61,7 +61,7 @@ El producto **funciona y está bien encaminado** (feedback de corrección). Lo p
 
 - **RDS PostgreSQL 18** Multi-AZ (`db.t4g.micro`) — datos transaccionales multi-tenant.
 - **RDS Proxy** con TLS obligatorio y credenciales en Secrets Manager.
-- **DynamoDB** `menuqr-events` — eventos de interacción (PK/SK por tenant + timestamp).
+- **DynamoDB** `menuqr-analytics` — agregados (DAY#/HOUR#/ITEM#); eventos crudos en **S3 Parquet** vía Firehose (tabla `menuqr-events` Dynamo retirada en Fase 5).
 - **S3 privado**: imágenes de menú y modelos ML (versionado + cifrado).
 - **S3 público**: hosting estático de SPAs admin y menú (website hosting).
 

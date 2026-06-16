@@ -29,8 +29,9 @@ module "ml_worker_lambda" {
   log_retention_in_days = var.log_retention_in_days
 
   environment_variables = {
-    EVENTS_TABLE                    = aws_dynamodb_table.menuqr_events.name
     RECOMMENDATIONS_MODEL_S3_BUCKET = module.s3-private-buckets[var.ml_bucket_name].bucket_name
+    ANALYTICS_EVENTS_BUCKET         = module.s3_analytics.bucket_name
+    EVENTS_SOURCE                   = "s3"
   }
 }
 

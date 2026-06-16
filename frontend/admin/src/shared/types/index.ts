@@ -32,18 +32,33 @@ export interface MenuResponse {
   sections: MenuSection[];
 }
 
-export interface AnalyticsDashboard {
-  totalMenuViewsLast30Days: number;
-  totalMenuViewsToday: number;
-  uniqueSessionsLast30Days: number;
-  avgSessionDepth: number;
-  dailyViews: DailyViewCount[];
-  hourlyHeatmap: Record<string, Record<number, number>>;
-  topItems: ItemAnalytics[];
-  sectionEngagement: SectionAnalytics[];
+export interface AnalyticsTrends {
+  days: number;
+  series: TrendDailyPoint[];
   filterUsage: Record<string, number>;
-  peakHourOfDay: number;
-  peakDayOfWeek: string;
+  sectionEngagement: SectionAnalytics[];
+  totalOrders: number;
+  totalRevenue: number;
+}
+
+export interface TrendDailyPoint {
+  date: string;
+  orders: number;
+  revenue: number;
+  menuViews: number;
+  itemViews: number;
+  uniqueMenuSessions: number | null;
+  conversionRate: number | null;
+  conversionStatus: 'PRELIMINARY' | 'FINAL';
+}
+
+export interface AnalyticsExportJob {
+  jobId: string;
+  status: string;
+  downloadUrl: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
 }
 
 export interface AnalyticsSummary {

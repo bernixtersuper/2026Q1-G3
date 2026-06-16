@@ -1,8 +1,7 @@
 package com.menudigital.application.analytics;
 
 import com.menudigital.application.analytics.dto.RecordEventCommand;
-import com.menudigital.domain.analytics.AnalyticsAggregateRepository;
-import com.menudigital.domain.analytics.AnalyticsRepository;
+import com.menudigital.domain.analytics.AnalyticsEventPublisher;
 import com.menudigital.domain.analytics.EventType;
 import com.menudigital.domain.analytics.InteractionEvent;
 import com.menudigital.domain.tenant.RestaurantRepository;
@@ -14,10 +13,7 @@ import io.quarkus.logging.Log;
 public class RecordInteractionUseCase {
 
     @Inject
-    AnalyticsRepository analyticsRepository;
-
-    @Inject
-    AnalyticsAggregateRepository aggregateRepository;
+    AnalyticsEventPublisher eventPublisher;
 
     @Inject
     RestaurantRepository restaurantRepository;
@@ -42,12 +38,9 @@ public class RecordInteractionUseCase {
         Log.debugf("Recording event - tenantId: %s, eventType: %s, eventId: %s",
             restaurant.getId(), eventType, event.id());
 
-        if (eventType.updatesAggregates()) {
-            aggregateRepository.increment(event);
-        }
-        analyticsRepository.save(event);
+        eventPublisher.publish(event);
 
-        Log.debugf("Event recorded successfully - eventId: %s", event.id());
+        Log.debugf("Event published successfully - eventId: %s", event.id());
     }
 
     private void validateEvent(RecordEventCommand command, EventType eventType) {

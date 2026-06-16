@@ -9,6 +9,8 @@ import jakarta.persistence.EntityManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @ApplicationScoped
@@ -182,5 +184,50 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
             buckets.add(new RealtimeOrderBucket(bucketStart, count));
         }
         return buckets;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<DailyOrderStats> dailyStats(TenantId tenantId, LocalDate from, LocalDate to) {
+        ZoneId zone = ZoneId.systemDefault();
+        Instant rangeStart = from.atStartOfDay(zone).toInstant();
+        Instant rangeEnd = to.plusDays(1).atStartOfDay(zone).toInstant();
+
+        List<Object[]> rows = em.createNativeQuery("""
+            SELECT (o.submitted_at AT TIME ZONE 'UTC')::date AS day,
+                   COUNT(*)::bigint,
+                   COALESCE(SUM(o.subtotal), 0),
+                   COUNT(DISTINCT o.session_id)::bigint
+            FROM orders o
+            WHERE o.restaurant_id = :rid
+              AND o.status NOT IN ('DRAFT', 'CANCELLED')
+              AND o.submitted_at >= :from AND o.submitted_at < :to
+            GROUP BY day
+            ORDER BY day
+            """)
+            .setParameter("rid", tenantId.value())
+            .setParameter("from", rangeStart)
+            .setParameter("to", rangeEnd)
+            .getResultList();
+
+        Map<LocalDate, DailyOrderStats> byDate = new LinkedHashMap<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            byDate.put(d, new DailyOrderStats(d, 0, BigDecimal.ZERO, 0));
+        }
+
+        for (Object[] row : rows) {
+            LocalDate day;
+            if (row[0] instanceof java.sql.Date sqlDate) {
+                day = sqlDate.toLocalDate();
+            } else {
+                day = LocalDate.parse(row[0].toString());
+            }
+            long orders = ((Number) row[1]).longValue();
+            BigDecimal revenue = row[2] != null ? new BigDecimal(row[2].toString()) : BigDecimal.ZERO;
+            long sessions = ((Number) row[3]).longValue();
+            byDate.put(day, new DailyOrderStats(day, orders, revenue, sessions));
+        }
+
+        return new ArrayList<>(byDate.values());
     }
 }

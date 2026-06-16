@@ -99,8 +99,34 @@ public class DynamoAnalyticsAggregateReadRepository implements AnalyticsAggregat
             getLong(item, "itemViews"),
             getLong(item, "cartAdds"),
             uniqueSessions,
-            batchCompletedAt
+            batchCompletedAt,
+            getStringList(item, "topItemIds"),
+            getLongMap(item, "filterBreakdown"),
+            getLongMap(item, "sectionBreakdown")
         );
+    }
+
+    private List<String> getStringList(Map<String, AttributeValue> item, String key) {
+        if (!item.containsKey(key) || item.get(key).l() == null) {
+            return List.of();
+        }
+        return item.get(key).l().stream()
+            .map(AttributeValue::s)
+            .filter(Objects::nonNull)
+            .toList();
+    }
+
+    private Map<String, Long> getLongMap(Map<String, AttributeValue> item, String key) {
+        if (!item.containsKey(key) || item.get(key).m() == null) {
+            return Map.of();
+        }
+        Map<String, Long> result = new LinkedHashMap<>();
+        item.get(key).m().forEach((k, v) -> {
+            if (v.n() != null) {
+                result.put(k, Long.parseLong(v.n()));
+            }
+        });
+        return result;
     }
 
     private HourAggregate toHourAggregate(Map<String, AttributeValue> item) {

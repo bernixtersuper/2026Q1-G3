@@ -247,3 +247,83 @@ resource "aws_cloudwatch_metric_alarm" "ml_training_dlq_messages" {
   alarm_actions = local.cloudwatch_alarm_actions
   ok_actions    = local.cloudwatch_alarm_actions
 }
+
+resource "aws_cloudwatch_metric_alarm" "analytics_processor_dlq_messages" {
+  alarm_name          = "${local.name_prefix}-analytics-processor-dlq-messages"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "Mensajes en DLQ del processor analytics; investigar y recuperar desde S3."
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.analytics_processor_dlq.name
+  }
+
+  alarm_actions = local.cloudwatch_alarm_actions
+  ok_actions    = local.cloudwatch_alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "analytics_processor_errors" {
+  alarm_name          = "${local.name_prefix}-analytics-processor-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Errores en Lambda analytics processor."
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = module.analytics_processor_lambda.function_name
+  }
+
+  alarm_actions = local.cloudwatch_alarm_actions
+  ok_actions    = local.cloudwatch_alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "kinesis_iterator_age" {
+  alarm_name          = "${local.name_prefix}-kinesis-iterator-age"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "GetRecords.IteratorAgeMilliseconds"
+  namespace           = "AWS/Kinesis"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 300000
+  alarm_description   = "Iterator age alto en stream analytics; Lambda/Dynamo posiblemente atascados."
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    StreamName = aws_kinesis_stream.menuqr_events.name
+  }
+
+  alarm_actions = local.cloudwatch_alarm_actions
+  ok_actions    = local.cloudwatch_alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "firehose_delivery_failures" {
+  alarm_name          = "${local.name_prefix}-firehose-delivery-failures"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "DeliveryToS3.Success"
+  namespace           = "AWS/Firehose"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 1
+  alarm_description   = "Firehose no entrega correctamente al data lake S3."
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    DeliveryStreamName = aws_kinesis_firehose_delivery_stream.menuqr_events.name
+  }
+
+  alarm_actions = local.cloudwatch_alarm_actions
+  ok_actions    = local.cloudwatch_alarm_actions
+}

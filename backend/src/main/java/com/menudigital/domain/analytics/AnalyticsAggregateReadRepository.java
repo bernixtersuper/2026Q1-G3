@@ -22,7 +22,10 @@ public interface AnalyticsAggregateReadRepository {
         long itemViews,
         long cartAdds,
         Long uniqueMenuSessions,
-        Instant batchCompletedAt
+        Instant batchCompletedAt,
+        List<String> topItemIds,
+        Map<String, Long> filterBreakdown,
+        Map<String, Long> sectionBreakdown
     ) {}
 
     record HourAggregate(

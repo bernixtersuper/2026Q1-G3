@@ -1,6 +1,7 @@
 package com.menudigital.interfaces.rest.admin;
 
 import com.menudigital.application.order.OrderEventBroadcaster;
+import com.menudigital.application.analytics.PublishOrderAnalyticsUseCase;
 import com.menudigital.application.shared.TenantContext;
 import com.menudigital.domain.order.Order;
 import com.menudigital.domain.order.OrderItem;
@@ -36,6 +37,9 @@ public class OrderAdminResource {
     
     @Inject
     OrderEventBroadcaster orderEventBroadcaster;
+
+    @Inject
+    PublishOrderAnalyticsUseCase publishOrderAnalyticsUseCase;
     
     @GET
     @Operation(summary = "List all active orders")
@@ -77,7 +81,9 @@ public class OrderAdminResource {
             .filter(o -> o.getTenantId().equals(tenantContext.getTenantId()))
             .map(order -> {
                 try {
+                    String fromStatus = order.getStatus().name();
                     order.confirm();
+                    publishOrderAnalyticsUseCase.publishOrderStatusChanged(order, fromStatus, order.getStatus().name());
                     orderRepository.update(order);
                     broadcastOrderUpdate(order);
                     return Response.ok(toResponse(order)).build();
@@ -99,7 +105,9 @@ public class OrderAdminResource {
             .filter(o -> o.getTenantId().equals(tenantContext.getTenantId()))
             .map(order -> {
                 try {
+                    String fromStatus = order.getStatus().name();
                     order.startPreparing();
+                    publishOrderAnalyticsUseCase.publishOrderStatusChanged(order, fromStatus, order.getStatus().name());
                     orderRepository.update(order);
                     broadcastOrderUpdate(order);
                     return Response.ok(toResponse(order)).build();
@@ -121,7 +129,9 @@ public class OrderAdminResource {
             .filter(o -> o.getTenantId().equals(tenantContext.getTenantId()))
             .map(order -> {
                 try {
+                    String fromStatus = order.getStatus().name();
                     order.markReady();
+                    publishOrderAnalyticsUseCase.publishOrderStatusChanged(order, fromStatus, order.getStatus().name());
                     orderRepository.update(order);
                     broadcastOrderUpdate(order);
                     return Response.ok(toResponse(order)).build();
@@ -143,7 +153,9 @@ public class OrderAdminResource {
             .filter(o -> o.getTenantId().equals(tenantContext.getTenantId()))
             .map(order -> {
                 try {
+                    String fromStatus = order.getStatus().name();
                     order.markDelivered();
+                    publishOrderAnalyticsUseCase.publishOrderStatusChanged(order, fromStatus, order.getStatus().name());
                     orderRepository.update(order);
                     broadcastOrderUpdate(order);
                     return Response.ok(toResponse(order)).build();
@@ -165,7 +177,9 @@ public class OrderAdminResource {
             .filter(o -> o.getTenantId().equals(tenantContext.getTenantId()))
             .map(order -> {
                 try {
+                    String fromStatus = order.getStatus().name();
                     order.cancel();
+                    publishOrderAnalyticsUseCase.publishOrderStatusChanged(order, fromStatus, order.getStatus().name());
                     orderRepository.update(order);
                     broadcastOrderUpdate(order);
                     return Response.ok(toResponse(order)).build();

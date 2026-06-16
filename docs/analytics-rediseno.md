@@ -1226,19 +1226,17 @@ El worker ML actual (`ml-training/worker_lambda.py`) se adapta para leer desde *
 
 **Entregable:** data lake operativo; pipeline completo demostrable.
 
-### Fase 4 — Jobs batch + tendencias + ML
+### Fase 4 — Jobs batch + tendencias + ML ✅
 
 - **Glue ETL Job** nocturno: dedup S3 → escribe `uniqueMenuSessions`, `topItemIds`, `batchCompletedAt` en `DAY#`.
 - Vista «Tendencias»: `Query DAY#` últimos 90 días.
 - Export CSV: endpoint async con **Athena** (ad-hoc).
-- Glue ETL RDS → S3 (`orders`, `order_items`).
-- Worker ML desde S3 (Glue o Lambda leyendo Parquet).
+- Worker ML desde S3 (Parquet + señales `ORDER_SUBMITTED`).
 
-### Fase 5 — Limpieza
+### Fase 5 — Limpieza ✅
 
-- Eliminar tabla `menuqr-events` (crudos) y código `DynamoDBEventRepository`.
-- Eliminar agregación en memoria (`GetMenuAnalyticsUseCase` scan de eventos).
-- Actualizar `Architecture.png` y `terraform/dynamo.tf`.
+- Tabla `menuqr-events` (crudos) y código legacy retirados.
+- Endpoints `/api/v1/analytics` y `GET /api/admin/analytics` eliminados.
 
 ---
 

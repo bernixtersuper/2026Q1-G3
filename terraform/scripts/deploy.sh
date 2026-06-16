@@ -21,8 +21,9 @@ require_cmd() {
 require_cmd terraform
 require_cmd aws
 
-echo "==> 1/4 Lambda artifacts (ml-training)"
+echo "==> 1/4 Lambda artifacts (ml-training + analytics-processor)"
 bash "${ROOT}/ml-training/scripts/build_lambda_dists.sh"
+bash "${ROOT}/analytics-processor/scripts/build_lambda_dist.sh"
 
 echo ""
 echo "==> 2/4 Terraform"
