@@ -13,10 +13,11 @@ import {
   verifyTOTPSetup,
   updateMFAPreference,
   fetchMFAPreference,
+  signInWithRedirect,
   type SignInOutput,
 } from 'aws-amplify/auth';
 import { jwtDecode } from 'jwt-decode';
-import { isAmplifyAuthConfigured } from './amplifyConfig';
+import { isAmplifyAuthConfigured, isOAuthConfigured } from './amplifyConfig';
 
 export interface CognitoTokens {
   idToken: string;
@@ -25,6 +26,19 @@ export interface CognitoTokens {
 
 export function canUseCognitoAuth() {
   return isAmplifyAuthConfigured();
+}
+
+/** El login federado con Google requiere user pool + OAuth (Hosted UI) configurados. */
+export function canUseGoogleAuth() {
+  return isAmplifyAuthConfigured() && isOAuthConfigured();
+}
+
+/**
+ * Inicia el flujo OAuth Authorization Code con Google.
+ * Redirige al Hosted UI de Cognito; al volver, AuthCallbackPage finaliza la sesión.
+ */
+export async function signInWithGoogle() {
+  await signInWithRedirect({ provider: 'Google' });
 }
 
 export function isAlreadySignedInError(err: unknown): boolean {

@@ -88,6 +88,13 @@ output "analytics_bronze_bucket" {
 
 output "analytics_silver_bucket" {
   value = local.analytics_silver_bucket_name
+output "cognito_domain" {
+  description = "Dominio del Hosted UI de Cognito (sin esquema), usado por Amplify para el flujo OAuth."
+  value       = "${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
+}
+
+output "analytics_events_bucket" {
+  value = local.analytics_bucket_name
 }
 
 output "kinesis_stream_name" {
@@ -96,6 +103,10 @@ output "kinesis_stream_name" {
 
 output "kinesis_stream_arn" {
   value = aws_kinesis_stream.menuqr_events.arn
+}
+
+output "analytics_processor_dlq_url" {
+  value = aws_sqs_queue.analytics_processor_dlq.url
 }
 
 output "firehose_delivery_stream_name" {
@@ -110,8 +121,8 @@ output "glue_analytics_enrich_job_name" {
   value = aws_glue_job.analytics_enrich.name
 }
 
-output "glue_ml_features_crawler_name" {
-  value = aws_glue_crawler.ml_features.name
+output "athena_workgroup_name" {
+  value = aws_athena_workgroup.analytics.name
 }
 
 output "waf_web_acl_arn" {

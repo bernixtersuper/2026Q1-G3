@@ -99,6 +99,9 @@ docker-compose.override.yml
 *.tfstate
 *.tfstate.*
 *.tfstate.backup
+# Secret tfvars (Google OAuth client secret, etc.) — auto-loaded but never committed
+*.auto.tfvars
+!*.auto.tfvars.example
 # Crash logs
 crash.log
 crash.*.log
