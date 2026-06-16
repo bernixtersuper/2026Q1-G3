@@ -82,6 +82,11 @@ output "cognito_issuer_url" {
   value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
 }
 
+output "cognito_domain" {
+  description = "Dominio del Hosted UI de Cognito (sin esquema), usado por Amplify para el flujo OAuth."
+  value       = "${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
+}
+
 output "analytics_events_bucket" {
   value = local.analytics_bucket_name
 }
