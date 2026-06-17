@@ -5,6 +5,7 @@
 #   bash terraform/scripts/run-glue-analytics-enrich.sh
 #   RUN_CRAWLER=1 bash terraform/scripts/run-glue-analytics-enrich.sh
 #   SKIP_WAIT=1 bash terraform/scripts/run-glue-analytics-enrich.sh
+#   FORCE_NEW=1 bash terraform/scripts/run-glue-analytics-enrich.sh
 #
 # Nota demo: Firehose escribe Parquet en S3 cada ~5 min (buffering_interval=300).
 # Generá eventos en el menú público y esperá unos minutos antes de correr este script.
@@ -13,6 +14,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 AWS_REGION="${AWS_REGION:-us-east-1}"
+POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-15}"
+WAIT_TIMEOUT_SEC="${WAIT_TIMEOUT_SEC:-3600}"
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -41,39 +44,132 @@ if [[ "${RUN_CRAWLER:-0}" == "1" ]]; then
   echo "    (El crawler corre en background; no bloquea el job enrich.)"
 fi
 
-echo "==> start-job-run"
-RUN_ID="$(aws glue start-job-run \
-  --job-name "${JOB_NAME}" \
-  --region "${AWS_REGION}" \
-  --query 'JobRunId' \
-  --output text)"
+normalize_run_id() {
+  local id="${1:-}"
+  if [[ -z "${id}" || "${id}" == "None" || "${id}" == "null" ]]; then
+    return 1
+  fi
+  echo "${id}"
+}
 
-echo "    JobRunId: ${RUN_ID}"
+find_active_job_run() {
+  local raw
+  raw="$(aws glue get-job-runs \
+    --job-name "${JOB_NAME}" \
+    --region "${AWS_REGION}" \
+    --max-results 10 \
+    --query "JobRuns[?JobRunState=='RUNNING' || JobRunState=='STARTING' || JobRunState=='STOPPING' || JobRunState=='WAITING'].Id | [0]" \
+    --output text 2>/dev/null | tr -d '\r' || true)"
+  normalize_run_id "${raw}" || return 1
+}
+
+start_new_job_run() {
+  local err_file run_id
+  err_file="$(mktemp)"
+  if run_id="$(aws glue start-job-run \
+    --job-name "${JOB_NAME}" \
+    --region "${AWS_REGION}" \
+    --query 'JobRunId' \
+    --output text 2>"${err_file}")"; then
+    rm -f "${err_file}"
+    normalize_run_id "${run_id}"
+    return 0
+  fi
+
+  local err
+  err="$(tr -d '\r' < "${err_file}")"
+  rm -f "${err_file}"
+
+  if [[ "${err}" == *ConcurrentRunsExceededException* ]]; then
+    local attempt active_id
+    for attempt in 1 2 3 4 5; do
+      if active_id="$(find_active_job_run)"; then
+        echo "${active_id}"
+        return 0
+      fi
+      sleep 3
+    done
+    echo "ERROR: hay un job en curso pero no aparece en get-job-runs; reintentá en unos segundos." >&2
+    echo "${err}" >&2
+    return 1
+  fi
+
+  echo "ERROR: ${err}" >&2
+  return 1
+}
+
+get_job_run_state() {
+  local run_id="$1"
+  aws glue get-job-run \
+    --job-name "${JOB_NAME}" \
+    --run-id "${run_id}" \
+    --region "${AWS_REGION}" \
+    --query 'JobRun.JobRunState' \
+    --output text
+}
+
+wait_for_job_run() {
+  local run_id="$1"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SEC))
+
+  echo "==> Esperando finalización (poll cada ${POLL_INTERVAL_SEC}s, timeout ${WAIT_TIMEOUT_SEC}s)..."
+
+  while true; do
+    local state
+    state="$(get_job_run_state "${run_id}")"
+
+    case "${state}" in
+      SUCCEEDED)
+        echo "Estado final: ${state}"
+        return 0
+        ;;
+      FAILED|STOPPED|TIMEOUT|ERROR)
+        echo "Estado final: ${state}" >&2
+        echo "ERROR: el job no terminó en SUCCEEDED" >&2
+        echo "Logs: consola Glue → ${JOB_NAME} → run ${run_id}" >&2
+        return 1
+        ;;
+      RUNNING|STARTING|STOPPING|WAITING)
+        if (( SECONDS >= deadline )); then
+          echo "ERROR: timeout esperando el job (${WAIT_TIMEOUT_SEC}s)" >&2
+          echo "Seguí el estado con:" >&2
+          echo "  aws glue get-job-run --job-name ${JOB_NAME} --run-id ${run_id} --region ${AWS_REGION}" >&2
+          return 1
+        fi
+        echo "    ... ${state} ($(date +%H:%M:%S))"
+        sleep "${POLL_INTERVAL_SEC}"
+        ;;
+      *)
+        echo "ERROR: estado desconocido '${state}' para run ${run_id}" >&2
+        return 1
+        ;;
+    esac
+  done
+}
+
+RUN_ID=""
+if [[ "${FORCE_NEW:-0}" != "1" ]]; then
+  if RUN_ID="$(find_active_job_run)"; then
+    echo "==> Ya hay un job en curso; se reutiliza el run existente"
+    echo "    JobRunId: ${RUN_ID}"
+    echo "    (Usá FORCE_NEW=1 para intentar lanzar otro; fallará si MaxConcurrentRuns=1.)"
+  fi
+fi
+
+if [[ -z "${RUN_ID}" ]]; then
+  echo "==> start-job-run"
+  RUN_ID="$(start_new_job_run)" || exit 1
+  echo "    JobRunId: ${RUN_ID}"
+fi
 
 if [[ "${SKIP_WAIT:-0}" == "1" ]]; then
-  echo "SKIP_WAIT=1: job lanzado. Seguí el estado en consola Glue o con:"
+  echo "SKIP_WAIT=1: job en curso. Seguí el estado con:"
   echo "  aws glue get-job-run --job-name ${JOB_NAME} --run-id ${RUN_ID} --region ${AWS_REGION}"
   exit 0
 fi
 
-echo "==> Esperando finalización (timeout waiter ~1 h)..."
-if aws glue wait job-run-completed \
-  --job-name "${JOB_NAME}" \
-  --run-id "${RUN_ID}" \
-  --region "${AWS_REGION}"; then
-  STATE="$(aws glue get-job-run \
-    --job-name "${JOB_NAME}" \
-    --run-id "${RUN_ID}" \
-    --region "${AWS_REGION}" \
-    --query 'JobRun.JobRunState' \
-    --output text)"
-  echo "Estado final: ${STATE}"
-  if [[ "${STATE}" != "SUCCEEDED" ]]; then
-    echo "ERROR: el job no terminó en SUCCEEDED" >&2
-    exit 1
-  fi
+if wait_for_job_run "${RUN_ID}"; then
   echo "Listo. Refrescá el dashboard de analytics en el admin."
 else
-  echo "ERROR: timeout o fallo esperando el job" >&2
   exit 1
 fi
