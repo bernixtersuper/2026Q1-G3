@@ -28,10 +28,10 @@ locals {
     "com.amazonaws.${data.aws_region.current.region}.dynamodb",
   ]
 
-  secretsmanager_endpoint_service = "com.amazonaws.${data.aws_region.current.region}.secretsmanager"
-  sqs_endpoint_service            = "com.amazonaws.${data.aws_region.current.region}.sqs"
-  ecr_api_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.api"
-  ecr_dkr_endpoint_service        = "com.amazonaws.${data.aws_region.current.region}.ecr.dkr"
+  secretsmanager_endpoint_service  = "com.amazonaws.${data.aws_region.current.region}.secretsmanager"
+  sqs_endpoint_service             = "com.amazonaws.${data.aws_region.current.region}.sqs"
+  ecr_api_endpoint_service         = "com.amazonaws.${data.aws_region.current.region}.ecr.api"
+  ecr_dkr_endpoint_service         = "com.amazonaws.${data.aws_region.current.region}.ecr.dkr"
   kinesis_streams_endpoint_service = "com.amazonaws.${data.aws_region.current.region}.kinesis-streams"
   logs_endpoint_service            = "com.amazonaws.${data.aws_region.current.region}.logs"
   monitoring_endpoint_service      = "com.amazonaws.${data.aws_region.current.region}.monitoring"
@@ -40,9 +40,8 @@ locals {
   analytics_processor_root = "${path.module}/../analytics-processor"
   analytics_processor_dist = "${local.analytics_processor_root}/lambda_dist/processor"
 
-  analytics_bronze_bucket_name    = module.s3_analytics_bronze.bucket_name
-  analytics_silver_bucket_name    = module.s3_analytics_silver.bucket_name
-  analytics_processed_bucket_name = module.s3_analytics_processed.bucket_name
+  analytics_events_bucket_name = module.s3_analytics_events.bucket_name
+  analytics_ml_bucket_name     = module.s3_analytics_ml.bucket_name
 
   backend_image = "${aws_ecr_repository.backend.repository_url}:${var.backend.image_tag}"
 

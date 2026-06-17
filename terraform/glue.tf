@@ -8,7 +8,7 @@ resource "aws_glue_crawler" "events" {
   database_name = aws_glue_catalog_database.menuqr.name
 
   s3_target {
-    path = "s3://${module.s3_analytics_bronze.bucket_name}/events/"
+    path = "s3://${module.s3_analytics_events.bucket_name}/events/"
   }
 
   schedule = var.glue_analytics.crawler_schedule
@@ -19,14 +19,14 @@ resource "aws_glue_crawler" "events" {
   }
 }
 
-# Capa silver: features ML materializadas por Glue enrich (tenant + día)
+# ML Analytics: features materializadas por Glue enrich (tenant + día)
 resource "aws_glue_crawler" "ml_features" {
   name          = "${local.name_prefix}-ml-features-crawler"
   role          = local.lab_role_arn
   database_name = aws_glue_catalog_database.menuqr.name
 
   s3_target {
-    path = "s3://${module.s3_analytics_silver.bucket_name}/ml_features/"
+    path = "s3://${module.s3_analytics_ml.bucket_name}/ml_features/"
   }
 
   schedule = "cron(30 4 * * ? *)"

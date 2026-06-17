@@ -1,5 +1,5 @@
 """
-Lambda worker: un mensaje SQS = un tenant; lee ml_features/ (silver) y sube MREC (.bin) a S3.
+Lambda worker: un mensaje SQS = un tenant; lee ml_features/ (ML Analytics) y sube MREC (.bin) a S3.
 Handler: worker_lambda.handler
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ def aws_region() -> str:
     return os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
 
 
-def silver_bucket() -> str:
-    return (os.environ.get("ANALYTICS_SILVER_BUCKET") or "").strip()
+def ml_analytics_bucket() -> str:
+    return (os.environ.get("ANALYTICS_ML_BUCKET") or "").strip()
 
 
 def ml_features_prefix() -> str:
@@ -47,8 +47,8 @@ def default_source_day_utc() -> str:
 
 
 def read_ml_features(tenant_id: str, date_str: str) -> dict[str, int]:
-    """Lee capa silver: ml_features/day=…/tenant_id=…/ (materializada por Glue enrich)."""
-    bucket = silver_bucket()
+    """Lee ML Analytics: ml_features/day=…/tenant_id=…/ (materializado por Glue enrich)."""
+    bucket = ml_analytics_bucket()
     if not bucket or pq is None:
         return {}
 
@@ -95,7 +95,7 @@ def query_item_views(tenant_id: str, date_str: str) -> dict[str, int]:
     if not counts:
         raise ValueError(
             f"No hay ml_features para tenant={tenant_id} day={date_str}. "
-            f"Verifica Glue enrich y s3://{silver_bucket()}/{ml_features_prefix()}/"
+            f"Verifica Glue enrich y s3://{ml_analytics_bucket()}/{ml_features_prefix()}/"
         )
     return counts
 

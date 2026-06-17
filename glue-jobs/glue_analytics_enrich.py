@@ -1,7 +1,7 @@
 """
-Glue ETL nocturno (bronze → silver):
+Glue ETL nocturno (Event Storage → ML Analytics):
   - Lee events/ Parquet (Firehose)
-  - Escribe ml_features/ Parquet por tenant+día (capa ML)
+  - Escribe ml_features/ Parquet por tenant+día
   - Enriquece DAY# en DynamoDB (dashboard)
 """
 import sys
@@ -17,7 +17,7 @@ from pyspark.sql.window import Window
 
 args = getResolvedOptions(
     sys.argv,
-    ["JOB_NAME", "ANALYTICS_TABLE", "BRONZE_BUCKET", "SILVER_BUCKET", "TOP_N"],
+    ["JOB_NAME", "ANALYTICS_TABLE", "EVENTS_BUCKET", "ML_ANALYTICS_BUCKET", "TOP_N"],
 )
 
 optional = {}
@@ -26,8 +26,8 @@ for key in ("GLUE_DATABASE", "EVENTS_TABLE", "AWS_REGION"):
         optional[key] = getResolvedOptions(sys.argv, [key])[key]
 
 analytics_table = args["ANALYTICS_TABLE"]
-bronze_bucket = args["BRONZE_BUCKET"]
-silver_bucket = args["SILVER_BUCKET"]
+events_bucket = args["EVENTS_BUCKET"]
+ml_analytics_bucket = args["ML_ANALYTICS_BUCKET"]
 top_n = int(args.get("TOP_N", "10"))
 region = optional.get("AWS_REGION", "us-east-1")
 ml_features_prefix = "ml_features"
@@ -60,7 +60,7 @@ def normalize_columns(df):
 
 def read_day_parquet(target_date):
     prefix = (
-        f"s3://{bronze_bucket}/events/year={target_date.year}/"
+        f"s3://{events_bucket}/events/year={target_date.year}/"
         f"month={target_date.month:02d}/day={target_date.day:02d}/"
     )
     try:
@@ -112,7 +112,7 @@ def write_ml_features(tenant_id: str, date_str: str, tdf) -> None:
         print(f"No ML features for tenant={tenant_id} day={date_str}")
         return
 
-    out_path = f"s3://{silver_bucket}/{ml_features_prefix}/day={date_str}/tenant_id={tenant_id}/"
+    out_path = f"s3://{ml_analytics_bucket}/{ml_features_prefix}/day={date_str}/tenant_id={tenant_id}/"
     (
         features.select(
             "tenant_id", "day", "item_id", "view_count", "order_boost", "popularity_score"

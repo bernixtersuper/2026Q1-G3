@@ -82,19 +82,14 @@ output "cognito_issuer_url" {
   value = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
 }
 
-output "analytics_bronze_bucket" {
-  description = "S3 bucket de eventos crudos (Firehose → Parquet en events/)."
-  value       = local.analytics_bronze_bucket_name
+output "analytics_events_bucket" {
+  description = "S3 Event Storage — Firehose escribe Parquet en events/."
+  value       = local.analytics_events_bucket_name
 }
 
-output "analytics_silver_bucket" {
-  description = "S3 bucket de features ML (Glue enrich → ml_features/)."
-  value       = local.analytics_silver_bucket_name
-}
-
-output "analytics_processed_bucket" {
-  description = "S3 bucket reservado para datos procesados / export ad-hoc."
-  value       = local.analytics_processed_bucket_name
+output "analytics_ml_bucket" {
+  description = "S3 ML Analytics — Glue enrich escribe ml_features/."
+  value       = local.analytics_ml_bucket_name
 }
 
 output "kinesis_stream_name" {

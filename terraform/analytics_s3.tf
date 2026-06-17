@@ -1,22 +1,26 @@
-# Bronze: eventos crudos (Firehose → events/)
-module "s3_analytics_bronze" {
+# Event Storage: Firehose → events/ (Parquet crudo)
+module "s3_analytics_events" {
   source = "./modules/s3-private"
   name   = "${local.name_prefix}-analytics-events"
 }
 
-# Eventos deduplicados / curados por Glue (opcional; reservado para export/ad-hoc).
-module "s3_analytics_processed" {
-  source = "./modules/s3-private"
-  name   = "${local.name_prefix}-analytics-processed"
-}
-
-# Silver: features ML materializadas (Glue enrich → ml_features/)
-module "s3_analytics_silver" {
+# ML Analytics: Glue enrich → ml_features/ (features por tenant+día)
+module "s3_analytics_ml" {
   source = "./modules/s3-private"
   name   = "${local.name_prefix}-analytics-silver"
 }
 
 moved {
   from = module.s3_analytics
-  to   = module.s3_analytics_bronze
+  to   = module.s3_analytics_events
+}
+
+moved {
+  from = module.s3_analytics_bronze
+  to   = module.s3_analytics_events
+}
+
+moved {
+  from = module.s3_analytics_silver
+  to   = module.s3_analytics_ml
 }
