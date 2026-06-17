@@ -75,21 +75,21 @@ public class AnalyticsResource {
         return Response.ok(getAnalyticsTrendsUseCase.execute(days)).build();
     }
 
-    @POST
-    @Path("/export")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Operation(summary = "Start async CSV export via Athena")
-    public Response startExport(ExportRequest request) {
-        int days = request != null && request.days() != null ? request.days() : 30;
-        return Response.accepted(analyticsExportUseCase.startExport(days)).build();
+    @GET
+    @Path("/menu-insights")
+    @Operation(summary = "Owner menu insights — bought together, menu engineering, modifiers (1–90 days)")
+    public Response getMenuInsights(@QueryParam("days") @DefaultValue("30") int days) {
+        return Response.ok(getMenuInsightsUseCase.execute(days)).build();
     }
 
     @GET
-    @Path("/export/{jobId}")
-    @Operation(summary = "Poll async export job status")
-    public Response getExportStatus(@PathParam("jobId") String jobId) {
-        return Response.ok(analyticsExportUseCase.getStatus(jobId)).build();
+    @Path("/menu-insights/export")
+    @Produces("text/csv")
+    @Operation(summary = "Download menu insights as CSV (1–90 days)")
+    public Response exportMenuInsights(@QueryParam("days") @DefaultValue("30") int days) {
+        String csv = getMenuInsightsUseCase.exportCsv(days);
+        return Response.ok(csv)
+            .header("Content-Disposition", "attachment; filename=\"menu-insights-" + days + "d.csv\"")
+            .build();
     }
-
-    public record ExportRequest(Integer days) {}
 }
