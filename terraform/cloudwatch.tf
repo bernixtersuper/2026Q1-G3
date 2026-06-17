@@ -92,7 +92,8 @@ locals {
       properties = {
         metrics = [
           ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.ml-training.name, { stat = "Maximum" }],
-          [".", ".", ".", aws_sqs_queue.ml-training-dlq.name, { stat = "Maximum", label = "DLQ" }],
+          [".", ".", ".", aws_sqs_queue.ml-training-dlq.name, { stat = "Maximum", label = "ML DLQ" }],
+          [".", ".", ".", aws_sqs_queue.analytics_processor_dlq.name, { stat = "Maximum", label = "Analytics DLQ" }],
           [".", "ApproximateAgeOfOldestMessage", ".", aws_sqs_queue.ml-training.name, { stat = "Maximum", yAxis = "right" }],
         ]
         view   = "timeSeries"
@@ -242,6 +243,26 @@ resource "aws_cloudwatch_metric_alarm" "ml_training_dlq_messages" {
 
   dimensions = {
     QueueName = aws_sqs_queue.ml-training-dlq.name
+  }
+
+  alarm_actions = local.cloudwatch_alarm_actions
+  ok_actions    = local.cloudwatch_alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "analytics_processor_dlq_messages" {
+  alarm_name          = "${local.name_prefix}-analytics-processor-dlq-messages"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "Mensajes en DLQ del analytics processor; fallo persistente tras reintentos Kinesis→Lambda (recuperar desde S3)."
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.analytics_processor_dlq.name
   }
 
   alarm_actions = local.cloudwatch_alarm_actions
