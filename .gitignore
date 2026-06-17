@@ -167,3 +167,5 @@ terraform/lambda_*.zip
 
 *__pycache__
 *__pycache__/
+
+*.zip
