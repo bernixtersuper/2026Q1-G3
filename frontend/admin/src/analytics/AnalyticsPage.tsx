@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { analyticsApi } from '@/shared/api/analyticsApi';
 import { KpiCards } from './KpiCards';
 import { HourlyHeatmap } from './HourlyHeatmap';
-import { TopSoldTable } from './TopSoldTable';
-import { ViewedVsSoldMatrix } from './ViewedVsSoldMatrix';
+import { MenuDemandSection } from './MenuDemandSection';
 import { ItemRankingTable } from './ItemRankingTable';
 import { RealtimePanel } from './RealtimePanel';
 import { TrendsSection } from './TrendsSection';
@@ -24,8 +23,8 @@ export function AnalyticsPage() {
   });
 
   const { data: menu } = useQuery({
-    queryKey: ['analytics', 'menu'],
-    queryFn: analyticsApi.getMenu,
+    queryKey: ['analytics', 'menu', 'today'],
+    queryFn: () => analyticsApi.getMenu('today'),
   });
 
   const { data: operations } = useQuery({
@@ -118,10 +117,7 @@ export function AnalyticsPage() {
             />
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TopSoldTable data={menu?.topSoldItems ?? []} />
-            <ViewedVsSoldMatrix data={menu?.viewedVsSold ?? []} />
-          </div>
+          <MenuDemandSection />
 
           <RealtimePanel data={realtime} />
 

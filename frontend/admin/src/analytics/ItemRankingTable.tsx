@@ -14,7 +14,7 @@ export function ItemRankingTable({ data }: ItemRankingTableProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Top vistos</CardTitle>
+          <CardTitle>Top vistos · histórico</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-center text-muted-foreground py-8">
@@ -28,7 +28,7 @@ export function ItemRankingTable({ data }: ItemRankingTableProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top Items</CardTitle>
+        <CardTitle>Top vistos · histórico</CardTitle>
       </CardHeader>
       <CardContent>
         <Table>

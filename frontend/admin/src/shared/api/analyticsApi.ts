@@ -6,6 +6,7 @@ import type {
   AnalyticsTrends,
   MenuInsights,
   RealtimeAnalytics,
+  SalesPeriod,
 } from '../types';
 
 export const analyticsApi = {
@@ -14,8 +15,10 @@ export const analyticsApi = {
     return response.data;
   },
 
-  getMenu: async (): Promise<AnalyticsMenuData> => {
-    const response = await apiClient.get<AnalyticsMenuData>('/api/admin/analytics/menu');
+  getMenu: async (period: SalesPeriod = 'today'): Promise<AnalyticsMenuData> => {
+    const response = await apiClient.get<AnalyticsMenuData>('/api/admin/analytics/menu', {
+      params: { period },
+    });
     return response.data;
   },
 
@@ -41,13 +44,5 @@ export const analyticsApi = {
       params: { days },
     });
     return response.data;
-  },
-
-  exportMenuInsightsCsv: async (days: number): Promise<Blob> => {
-    const response = await apiClient.get('/api/admin/analytics/menu-insights/export', {
-      params: { days },
-      responseType: 'blob',
-    });
-    return response.data as Blob;
   },
 };

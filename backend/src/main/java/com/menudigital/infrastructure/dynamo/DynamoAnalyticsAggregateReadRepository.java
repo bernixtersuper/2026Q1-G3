@@ -37,17 +37,17 @@ public class DynamoAnalyticsAggregateReadRepository implements AnalyticsAggregat
         String skFrom = "DAY#" + from.format(DAY_FMT);
         String skTo = "DAY#" + to.format(DAY_FMT) + "~";
 
-        QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+        return queryAllPages(QueryRequest.builder()
             .tableName(tableName)
             .keyConditionExpression("PK = :pk AND SK BETWEEN :from AND :to")
             .expressionAttributeValues(Map.of(
                 ":pk", AttributeValue.builder().s(pk).build(),
                 ":from", AttributeValue.builder().s(skFrom).build(),
                 ":to", AttributeValue.builder().s(skTo).build()
-            ))
-            .build());
-
-        return response.items().stream().map(this::toDayAggregate).toList();
+            )))
+            .stream()
+            .map(this::toDayAggregate)
+            .toList();
     }
 
     @Override
@@ -56,33 +56,53 @@ public class DynamoAnalyticsAggregateReadRepository implements AnalyticsAggregat
         String skFrom = "HOUR#" + from.atZone(ZONE).format(HOUR_FMT);
         String skTo = "HOUR#" + to.atZone(ZONE).format(HOUR_FMT) + "~";
 
-        QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+        return queryAllPages(QueryRequest.builder()
             .tableName(tableName)
             .keyConditionExpression("PK = :pk AND SK BETWEEN :from AND :to")
             .expressionAttributeValues(Map.of(
                 ":pk", AttributeValue.builder().s(pk).build(),
                 ":from", AttributeValue.builder().s(skFrom).build(),
                 ":to", AttributeValue.builder().s(skTo).build()
-            ))
-            .build());
-
-        return response.items().stream().map(this::toHourAggregate).toList();
+            )))
+            .stream()
+            .map(this::toHourAggregate)
+            .toList();
     }
 
     @Override
     public List<ItemAggregate> queryItems(String tenantId) {
         String pk = "TENANT#" + tenantId;
 
-        QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+        return queryAllPages(QueryRequest.builder()
             .tableName(tableName)
             .keyConditionExpression("PK = :pk AND begins_with(SK, :prefix)")
             .expressionAttributeValues(Map.of(
                 ":pk", AttributeValue.builder().s(pk).build(),
                 ":prefix", AttributeValue.builder().s("ITEM#").build()
-            ))
-            .build());
+            )))
+            .stream()
+            .map(this::toItemAggregate)
+            .toList();
+    }
 
-        return response.items().stream().map(this::toItemAggregate).toList();
+    private List<Map<String, AttributeValue>> queryAllPages(QueryRequest.Builder requestBuilder) {
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        QueryRequest baseRequest = requestBuilder.build();
+        Map<String, AttributeValue> lastKey = null;
+
+        do {
+            QueryRequest.Builder pageBuilder = baseRequest.toBuilder();
+            if (lastKey != null) {
+                pageBuilder.exclusiveStartKey(lastKey);
+            }
+            QueryResponse response = dynamoDbClient.query(pageBuilder.build());
+            items.addAll(response.items());
+            lastKey = response.hasLastEvaluatedKey() && !response.lastEvaluatedKey().isEmpty()
+                ? response.lastEvaluatedKey()
+                : null;
+        } while (lastKey != null);
+
+        return items;
     }
 
     private DayAggregate toDayAggregate(Map<String, AttributeValue> item) {

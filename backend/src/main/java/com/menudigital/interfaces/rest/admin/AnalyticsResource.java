@@ -2,6 +2,7 @@ package com.menudigital.interfaces.rest.admin;
 
 import com.menudigital.application.analytics.*;
 import com.menudigital.domain.analytics.RealtimeAnalyticsResponse;
+import com.menudigital.domain.analytics.SalesPeriod;
 import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -49,8 +50,9 @@ public class AnalyticsResource {
     @GET
     @Path("/menu")
     @Operation(summary = "Menu demand — top sold and viewed")
-    public Response getMenuAnalytics() {
-        return Response.ok(getAnalyticsMenuUseCase.execute()).build();
+    public Response getMenuAnalytics(
+            @QueryParam("period") @DefaultValue("today") String period) {
+        return Response.ok(getAnalyticsMenuUseCase.execute(SalesPeriod.fromParam(period))).build();
     }
 
     @GET

@@ -1,13 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatNumber } from '@/lib/utils';
-import type { ViewedVsSoldItem } from '@/shared/types';
+import type { ViewedVsSoldItem, SalesPeriod } from '@/shared/types';
+import { salesPeriodLabel } from './salesPeriod';
 
 interface ViewedVsSoldMatrixProps {
   data: ViewedVsSoldItem[];
+  salesPeriod: SalesPeriod;
 }
 
-export function ViewedVsSoldMatrix({ data }: ViewedVsSoldMatrixProps) {
+export function ViewedVsSoldMatrix({ data, salesPeriod }: ViewedVsSoldMatrixProps) {
+  const salesLabel = salesPeriodLabel(salesPeriod);
+
   if (data.length === 0) {
     return (
       <Card>
@@ -25,7 +29,9 @@ export function ViewedVsSoldMatrix({ data }: ViewedVsSoldMatrixProps) {
     <Card>
       <CardHeader>
         <CardTitle>Mirado vs vendido</CardTitle>
-        <CardDescription>Comparación de vistas y unidades pedidas hoy</CardDescription>
+        <CardDescription>
+          Vistas acumuladas (histórico) vs unidades vendidas · {salesLabel}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Table>

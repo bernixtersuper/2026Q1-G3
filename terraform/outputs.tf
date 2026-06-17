@@ -50,6 +50,14 @@ output "ml_training_queue_url" {
   value = aws_sqs_queue.ml-training.url
 }
 
+output "ml_orchestrator_function_name" {
+  value = module.ml_orchestrator_lambda.function_name
+}
+
+output "ml_worker_function_name" {
+  value = module.ml_worker_lambda.function_name
+}
+
 output "ml_training_dlq_url" {
   value = aws_sqs_queue.ml-training-dlq.url
 }

@@ -2,21 +2,27 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatNumber } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-import type { TopSoldItem } from '@/shared/types';
+import type { TopSoldItem, SalesPeriod } from '@/shared/types';
+import { salesPeriodLabel } from './salesPeriod';
 
 interface TopSoldTableProps {
   data: TopSoldItem[];
+  period: SalesPeriod;
 }
 
-export function TopSoldTable({ data }: TopSoldTableProps) {
+export function TopSoldTable({ data, period }: TopSoldTableProps) {
+  const periodLabel = salesPeriodLabel(period);
+
   if (data.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Top vendidos hoy</CardTitle>
+          <CardTitle>Top vendidos · {periodLabel}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-center text-muted-foreground py-8">Sin pedidos registrados hoy</p>
+          <p className="text-center text-muted-foreground py-8">
+            Sin pedidos en el periodo seleccionado
+          </p>
         </CardContent>
       </Card>
     );
@@ -25,7 +31,7 @@ export function TopSoldTable({ data }: TopSoldTableProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top vendidos hoy</CardTitle>
+        <CardTitle>Top vendidos · {periodLabel}</CardTitle>
       </CardHeader>
       <CardContent>
         <Table>

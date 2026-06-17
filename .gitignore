@@ -123,6 +123,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .venv/
+.venv-seed/
 venv/
 *.egg-info/
 .pytest_cache/

@@ -68,10 +68,13 @@ export interface AnalyticsSummary {
 }
 
 export interface AnalyticsMenuData {
+  salesPeriod: SalesPeriod;
   topSoldItems: TopSoldItem[];
   topViewedItems: TopViewedItem[];
   viewedVsSold: ViewedVsSoldItem[];
 }
+
+export type SalesPeriod = 'today' | '30d' | 'all';
 
 export interface TopSoldItem {
   itemId: string;

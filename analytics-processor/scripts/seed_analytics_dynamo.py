@@ -37,8 +37,6 @@ import sys
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-import boto3
-
 SEED = 42
 FILTER_WEIGHTS = {"VEGETARIAN": 0.40, "GLUTEN_FREE": 0.25, "VEGAN": 0.20, "DAIRY_FREE": 0.15}
 SERVICE_HOURS = [12, 13, 14, 20, 21, 22]  # lunch + dinner peaks
@@ -93,6 +91,18 @@ def resolve_tz(name):
         sys.exit(f"Unknown --tz '{name}': {exc} (try 'pip install tzdata')")
 
 
+def dynamodb_client(region):
+    try:
+        import boto3
+    except ImportError:
+        sys.exit(
+            "Missing dependency 'boto3'. Install seed requirements:\n"
+            "  bash terraform/scripts/seed-demo.sh   (creates .venv-seed automatically)\n"
+            "  # or: python3 -m venv .venv-seed && .venv-seed/bin/pip install -r analytics-processor/scripts/requirements.txt"
+        )
+    return boto3.client("dynamodb", region_name=region)
+
+
 def make_put(ddb, table, dry_run):
     """Returns a put(item) that writes to DynamoDB, or prints a preview in dry-run mode."""
     def put(item):
@@ -123,7 +133,7 @@ def main():
     days = max(1, min(90, args.days))
     rnd = random.Random(SEED)
     tz = resolve_tz(args.tz)
-    ddb = None if args.dry_run else boto3.client("dynamodb", region_name=args.region)
+    ddb = None if args.dry_run else dynamodb_client(args.region)
     put = make_put(ddb, args.table, args.dry_run)
 
     tenant_id, sections = fetch_menu(args.api_url, args.token)
@@ -144,7 +154,7 @@ def main():
     current_hour = now_local.hour
     prev_hour = (now_local - timedelta(hours=1)).hour
     iso_now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    written_days = written_hours = 0
+    written_days = written_hours = written_item_rows = 0
 
     for i in range(days):
         day = today - timedelta(days=(days - 1 - i))
@@ -209,13 +219,23 @@ def main():
             "views": n(total),
             "lastViewedAt": {"S": iso_now},
         })
+        written_item_rows += 1
 
+    nonzero_items = sum(1 for v in item_total_views.values() if v > 0)
+    max_views = max(item_total_views.values()) if item_total_views else 0
     verb = "Would seed" if args.dry_run else "Seeded"
     print(
         f"{verb} DynamoDB analytics for tenant {tenant_id}: "
-        f"{written_days} DAY#, {written_hours} HOUR#, {len(items)} ITEM# items "
+        f"{written_days} DAY#, {written_hours} HOUR#, {written_item_rows} ITEM# "
+        f"({nonzero_items} con views>0, máx={max_views}) "
         f"({date_str_range(today, days)})."
     )
+    if nonzero_items == 0:
+        print(
+            "WARN: ningún ITEM# tiene views>0; el panel «Top vistos» quedará vacío. "
+            "Probá --days 30 o revisá que el menú tenga ítems.",
+            file=sys.stderr,
+        )
 
 
 def date_str_range(today, days):

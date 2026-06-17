@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { analyticsApi } from '@/shared/api/analyticsApi';
@@ -18,18 +18,6 @@ export function MenuInsightsSection() {
     queryFn: () => analyticsApi.getMenuInsights(days),
   });
 
-  const exportMutation = useMutation({
-    mutationFn: () => analyticsApi.exportMenuInsightsCsv(days),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `menu-insights-${days}d.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    },
-  });
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -43,14 +31,6 @@ export function MenuInsightsSection() {
             {d} días
           </Button>
         ))}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => exportMutation.mutate()}
-          disabled={exportMutation.isPending || !insights}
-        >
-          {exportMutation.isPending ? 'Exportando…' : 'Exportar CSV'}
-        </Button>
       </div>
 
       {isLoading || !insights ? (

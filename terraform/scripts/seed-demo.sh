@@ -27,6 +27,45 @@ require_cmd() {
 require_cmd curl
 require_cmd python3
 
+ensure_seed_python_deps() {
+  local req="${REPO_ROOT}/analytics-processor/scripts/requirements.txt"
+  if [[ ! -f "${req}" ]]; then
+    echo "ERROR: missing ${req}" >&2
+    exit 1
+  fi
+  if python3 -c "import boto3" >/dev/null 2>&1; then
+    SEED_PYTHON=python3
+    return 0
+  fi
+  local venv="${REPO_ROOT}/.venv-seed"
+  if [[ -x "${venv}/bin/python" ]] && "${venv}/bin/python" -c "import boto3" >/dev/null 2>&1; then
+    SEED_PYTHON="${venv}/bin/python"
+    return 0
+  fi
+
+  echo "==> Installing seed dependencies (boto3)..."
+  if python3 -m venv "${venv}" 2>/dev/null; then
+    "${venv}/bin/pip" install -q -r "${req}"
+    SEED_PYTHON="${venv}/bin/python"
+  else
+    # PEP 668 / sin python3-venv: intentar pip en user o break-system-packages
+    if python3 -m pip install --user -q -r "${req}" 2>/dev/null \
+      || python3 -m pip install --break-system-packages -q -r "${req}" 2>/dev/null; then
+      SEED_PYTHON=python3
+    else
+      echo "ERROR: could not install boto3." >&2
+      echo "  Debian/Ubuntu: sudo apt install python3-venv python3-pip" >&2
+      echo "  Then re-run, or: python3 -m venv .venv-seed && .venv-seed/bin/pip install -r ${req}" >&2
+      exit 1
+    fi
+  fi
+
+  "${SEED_PYTHON}" -c "import boto3" >/dev/null 2>&1 || {
+    echo "ERROR: boto3 still missing after install (see ${req})" >&2
+    exit 1
+  }
+}
+
 if [[ -z "${TOKEN:-}" ]]; then
   echo "ERROR: set TOKEN=<admin JWT> (Authorization bearer for the tenant to seed)." >&2
   exit 1
@@ -63,8 +102,9 @@ else
 fi
 
 if [[ "${SKIP_DYNAMO:-0}" != "1" ]]; then
+  ensure_seed_python_deps
   echo "==> 2/2 DynamoDB views seed — seed_analytics_dynamo.py"
-  python3 "${REPO_ROOT}/analytics-processor/scripts/seed_analytics_dynamo.py" \
+  "${SEED_PYTHON}" "${REPO_ROOT}/analytics-processor/scripts/seed_analytics_dynamo.py" \
     --api-url "${API_URL}" \
     --token "${TOKEN}" \
     --region "${AWS_REGION}" \

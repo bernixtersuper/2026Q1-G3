@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public record AnalyticsMenuResponse(
+    String salesPeriod,
     List<TopSoldItemRow> topSoldItems,
     List<TopViewedItemRow> topViewedItems,
     List<ViewedVsSoldRow> viewedVsSold

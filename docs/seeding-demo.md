@@ -23,11 +23,19 @@ El dashboard lee de **dos** almacenes y por eso el seeding tiene **dos partes** 
 
    Luego `terraform apply` (setea `DEMO_SEED_ENABLED=true` en la task ECS y la redespliega).
 
-2. **Credenciales AWS** activas (las del Learner Lab) y **`boto3`**:
+2. **Credenciales AWS** activas (las del Learner Lab). Dependencias Python del script Dynamo (`boto3`):
 
    ```bash
-   pip install boto3       # ya viene preinstalado en AWS CloudShell
+   # seed-demo.sh crea .venv-seed en la raíz del repo si hace falta
+   TOKEN=<jwt> bash terraform/scripts/seed-demo.sh
+
+   # o manualmente:
+   python3 -m venv .venv-seed
+   .venv-seed/bin/pip install -r analytics-processor/scripts/requirements.txt
+   .venv-seed/bin/python analytics-processor/scripts/seed_analytics_dynamo.py ...
    ```
+
+   En AWS CloudShell `boto3` suele venir preinstalado (no hace falta venv).
 
 3. El **JWT de admin** del tenant a poblar (ver abajo).
 
@@ -130,6 +138,34 @@ Refrescá el dashboard en el panel admin:
 - **Insights** → "Se piden juntos", ingeniería de menú (las 4 categorías), extras.
 - **Operaciones** → heatmaps de pedidos y vistas.
 - El panel **realtime** muestra actividad de la hora actual.
+
+### «Top vistos» vacío pero hay vistas de menú
+
+Son **dos métricas distintas** en Dynamo:
+
+| Métrica | Ítem Dynamo | Panel |
+|---------|-------------|--------|
+| Vistas de menú | `DAY#.menuViews` | KPI «Vistas menú», gráfico Tendencias |
+| Vistas por ítem | `ITEM#.views` (acumulado) + `DAY#.itemViews` | «Top vistos», línea Item Views |
+
+El seed escribe **ambos**, pero el ranking «Top vistos» lee sobre todo `ITEM#`. Si solo corriste la parte relacional (`SKIP_DYNAMO=1`) o el paso 2 falló, verás pedidos/vistas de menú sin ranking por plato.
+
+Comprobación rápida (reemplazá `TENANT_ID`):
+
+```bash
+aws dynamodb query --table-name menuqr-analytics \
+  --key-condition-expression "PK = :pk AND begins_with(SK, :pfx)" \
+  --expression-attribute-values '{":pk":{"S":"TENANT#TENANT_ID"},":pfx":{"S":"ITEM#"}}' \
+  --select COUNT
+```
+
+Debería devolver tantos ítems como platos en el menú. Si `Count = 0`, re-ejecutá solo Dynamo:
+
+```bash
+TOKEN=<jwt> SKIP_ORDERS=1 bash terraform/scripts/seed-demo.sh
+```
+
+El script imprime al final cuántos `ITEM#` tienen `views>0`.
 
 ---
 
