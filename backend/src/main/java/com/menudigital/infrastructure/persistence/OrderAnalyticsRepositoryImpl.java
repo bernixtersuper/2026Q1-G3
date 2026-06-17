@@ -36,30 +36,40 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
 
     @Override
     public BigDecimal sumRevenue(TenantId tenantId, Instant from, Instant to) {
-        BigDecimal result = em.createQuery(
+        Number result = (Number) em.createQuery(
             "SELECT COALESCE(SUM(o.subtotal), 0) FROM OrderEntity o " +
             "WHERE o.restaurantId = :rid AND o.status NOT IN :excluded " +
-            "AND o.submittedAt >= :from AND o.submittedAt < :to", BigDecimal.class)
+            "AND o.submittedAt >= :from AND o.submittedAt < :to")
             .setParameter("rid", tenantId.value())
             .setParameter("excluded", EXCLUDED)
             .setParameter("from", from)
             .setParameter("to", to)
             .getSingleResult();
-        return result != null ? result : BigDecimal.ZERO;
+        return toBigDecimal(result);
     }
 
     @Override
     public BigDecimal avgTicket(TenantId tenantId, Instant from, Instant to) {
-        BigDecimal result = em.createQuery(
+        Number result = (Number) em.createQuery(
             "SELECT COALESCE(AVG(o.subtotal), 0) FROM OrderEntity o " +
             "WHERE o.restaurantId = :rid AND o.status NOT IN :excluded " +
-            "AND o.submittedAt >= :from AND o.submittedAt < :to", BigDecimal.class)
+            "AND o.submittedAt >= :from AND o.submittedAt < :to")
             .setParameter("rid", tenantId.value())
             .setParameter("excluded", EXCLUDED)
             .setParameter("from", from)
             .setParameter("to", to)
             .getSingleResult();
-        return result != null ? result : BigDecimal.ZERO;
+        return toBigDecimal(result);
+    }
+
+    private static BigDecimal toBigDecimal(Number value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal bd) {
+            return bd;
+        }
+        return BigDecimal.valueOf(value.doubleValue());
     }
 
     @Override
@@ -110,9 +120,9 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
     @SuppressWarnings("unchecked")
     public Map<String, Map<Integer, Long>> ordersHeatmap(TenantId tenantId, Instant from, Instant to) {
         List<Object[]> rows = em.createNativeQuery("""
-            SELECT EXTRACT(DOW FROM o.submitted_at AT TIME ZONE 'UTC')::int AS dow,
-                   EXTRACT(HOUR FROM o.submitted_at AT TIME ZONE 'UTC')::int AS hour,
-                   COUNT(*)::bigint
+            SELECT CAST(EXTRACT(DOW FROM o.submitted_at AT TIME ZONE 'UTC') AS INTEGER) AS dow,
+                   CAST(EXTRACT(HOUR FROM o.submitted_at AT TIME ZONE 'UTC') AS INTEGER) AS hour,
+                   CAST(COUNT(*) AS BIGINT)
             FROM orders o
             WHERE o.restaurant_id = :rid
               AND o.status NOT IN ('DRAFT', 'CANCELLED')
@@ -153,8 +163,8 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
     @SuppressWarnings("unchecked")
     public Optional<Integer> peakHourToday(TenantId tenantId, Instant dayStart, Instant dayEnd) {
         List<Object[]> rows = em.createNativeQuery("""
-            SELECT EXTRACT(HOUR FROM o.submitted_at AT TIME ZONE 'UTC')::int AS hour,
-                   COUNT(*)::bigint AS cnt
+            SELECT CAST(EXTRACT(HOUR FROM o.submitted_at AT TIME ZONE 'UTC') AS INTEGER) AS hour,
+                   CAST(COUNT(*) AS BIGINT) AS cnt
             FROM orders o
             WHERE o.restaurant_id = :rid
               AND o.status NOT IN ('DRAFT', 'CANCELLED')
@@ -194,10 +204,10 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
         Instant rangeEnd = to.plusDays(1).atStartOfDay(zone).toInstant();
 
         List<Object[]> rows = em.createNativeQuery("""
-            SELECT (o.submitted_at AT TIME ZONE 'UTC')::date AS day,
-                   COUNT(*)::bigint,
+            SELECT CAST(o.submitted_at AT TIME ZONE 'UTC' AS DATE) AS day,
+                   CAST(COUNT(*) AS BIGINT),
                    COALESCE(SUM(o.subtotal), 0),
-                   COUNT(DISTINCT o.session_id)::bigint
+                   CAST(COUNT(DISTINCT o.session_id) AS BIGINT)
             FROM orders o
             WHERE o.restaurant_id = :rid
               AND o.status NOT IN ('DRAFT', 'CANCELLED')
