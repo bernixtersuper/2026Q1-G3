@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { UtensilsCrossed, BarChart3, LogOut, QrCode, ClipboardList, Palette, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -14,11 +14,9 @@ const navItems = [
 
 export function AppShell() {
   const { restaurantName, logout } = useAuth();
-  const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    void logout();
   };
 
   return (

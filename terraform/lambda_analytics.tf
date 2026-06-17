@@ -10,7 +10,6 @@ module "analytics_processor_lambda" {
 
   environment_variables = {
     ANALYTICS_TABLE = aws_dynamodb_table.menuqr_analytics.name
-    AWS_REGION      = data.aws_region.current.region
   }
 }
 

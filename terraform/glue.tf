@@ -11,7 +11,7 @@ resource "aws_glue_crawler" "events" {
     path = "s3://${module.s3_analytics.bucket_name}/events/"
   }
 
-  schedule = "cron(0 4 * * ? *)"
+  schedule = var.glue_analytics.crawler_schedule
 
   schema_change_policy {
     delete_behavior = "LOG"

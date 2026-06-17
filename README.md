@@ -1,4 +1,4 @@
-# Cloud Computing - TP3 - Terraform
+# Cloud Computing - TP4 - MenuQR
 ### Grupo 3 - 2026Q1 - ITBA
 
 ## Introducción
@@ -37,7 +37,7 @@ aws sts get-caller-identity
 |-------------|---------|------------|
 | [Terraform](https://developer.hashicorp.com/terraform/install) | ≥ **1.8.5** | Infraestructura (`terraform apply`) |
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 | Deploy, `aws s3 sync`, ECR |
-| [Docker](https://docs.docker.com/engine/install/) | Reciente | Backend → ECR; **obligatorio** para Lambdas ML ([nota](#empaquetado-de-lambdas-ml)) |
+| [Docker](https://docs.docker.com/engine/install/) | Reciente | Backend → ECR; **obligatorio** para Lambdas ML ([nota](#6-empaquetado-de-lambdas)) |
 | [JDK](https://adoptium.net/) + [Maven](https://maven.apache.org/install.html) | Java **21**, Maven 3.9+ | Build Quarkus (`deploy-backend.sh`) |
 | [Node.js](https://nodejs.org/) | **20 LTS** + npm | Build SPAs → S3 (`deploy-frontends.sh`) |
 | [Python](https://www.python.org/downloads/) + **pip** | **3.12** | Opcional: solo con `LAMBDA_BUILD_NATIVE=1` (sin Docker; no recomendado) |
@@ -51,21 +51,122 @@ Providers Terraform: **hashicorp/aws** (≥ 5.71.0), **hashicorp/archive** (≥ 
 | `terraform/scripts/deploy.sh` | `terraform`, `aws`, `bash` |
 | `terraform/scripts/deploy-backend.sh` | `terraform`, `docker`, `mvn`, `aws` |
 | `terraform/scripts/deploy-frontends.sh` | `terraform`, `npm`, `aws` |
+| `terraform/scripts/run-glue-analytics-enrich.sh` | `terraform`, `aws` |
 | `ml-training/scripts/build_lambda_dists.sh` | `docker`, `bash` |
+| `analytics-processor/scripts/build_lambda_dist.sh` | `bash` |
 
-## Scripts (`terraform/scripts/`)
+## Despliegue
 
-| Script | Uso                                                             |
-|--------|-----------------------------------------------------------------|
+El despliegue completo sigue este orden:
+
+```
+Lambdas (ML + analytics) → terraform apply → backend (ECR/ECS) → frontends (S3)
+```
+
+Lo orquesta `terraform/scripts/deploy.sh`. Terraform crea y configura la infraestructura; los scripts Bash construyen y suben los artefactos de aplicación (imagen Docker, SPAs, zips de Lambda).
+
+### 1. Configuración previa
+
+**Credenciales AWS** — verificar acceso con LabRole (AWS Academy):
+
+```bash
+aws sts get-caller-identity
+```
+
+**Variables de Terraform** — revisar `terraform/terraform.tfvars` antes del primer apply. Valores relevantes:
+
+| Variable | Uso |
+|----------|-----|
+| `project_name`, `aws_region` | Prefijo de recursos y región (`us-east-1`) |
+| `alert_email` | Email para alertas operativas vía SNS (DLQ, ALB 5xx, errores Lambda). Tras el deploy hay que **confirmar la suscripción** desde el correo. |
+| `backend.desired_count` / `autoscaling_*` | Tareas ECS Fargate (2–4 con auto scaling por CPU) |
+| `ml_training.schedule_expression` | CRON del pipeline ML (default: diario 06:00 UTC) |
+| `glue_analytics.enrich_schedule_expression` | CRON del job Glue enrich (default: diario 03:00 UTC) |
+| `glue_analytics.enrich_schedule_enabled` | Activar/desactivar el trigger programado del enrich |
+
+### 2. Primera vez: estado remoto (S3 + DynamoDB)
+
+Antes del primer `terraform apply`, crear el bucket y la tabla de locks (una vez por cuenta AWS):
+
+```bash
+bash terraform/scripts/terraform-init-remote.sh
+```
+
+Genera `terraform/backend.hcl` (gitignored) y ejecuta `terraform init` contra S3.
+
+Para CI, copiar `TF_STATE_BUCKET` y `TF_STATE_DYNAMODB_TABLE` a los secrets de GitHub (salida del script, del workflow **Terraform init remote**, o `terraform -chdir=terraform/bootstrap output`).
+
+El script es **idempotente**: si el bucket y la tabla ya existen, omite el bootstrap y solo escribe `backend.hcl` + `terraform init`.
+
+Si ya tenías state local y querés migrarlo:
+
+```bash
+MIGRATE_LOCAL_STATE=1 bash terraform/scripts/terraform-init-remote.sh
+```
+
+### 3. Despliegue completo (recomendado)
+
+Desde la raíz del repositorio:
+
+```bash
+bash terraform/scripts/terraform-init-remote.sh   # solo la primera vez
+bash terraform/scripts/deploy.sh
+```
+
+`deploy.sh` ejecuta en orden:
+
+1. Build de Lambdas ML (`ml-training/scripts/build_lambda_dists.sh`) y analytics (`analytics-processor/scripts/build_lambda_dist.sh`)
+2. `terraform init` (usa `backend.hcl` si existe) + `terraform apply`
+3. `deploy-backend.sh` — build Maven, imagen Docker → ECR, redeploy ECS
+4. `deploy-frontends.sh` — build Vite de admin y menú → sync S3
+
+**Primera vez:** el `apply` puede tardar ~15–25 min (RDS Multi-AZ, NAT, etc.). El backend necesita que RDS Proxy esté disponible; si el deploy del backend falla por conexión a BD, esperar unos minutos y volver a ejecutar solo el backend:
+
+```bash
+bash terraform/scripts/deploy-backend.sh
+```
+
+En CI, el workflow **AWS deploy** incluye una espera automática del RDS Proxy antes del paso de backend.
+
+#### Variables de entorno útiles
+
+| Variable | Script | Efecto |
+|----------|--------|--------|
+| `SKIP_TERRAFORM_APPLY=1` | `deploy.sh` | Solo artefactos (Lambdas + backend + frontends); infra ya aplicada |
+| `TERRAFORM_PLAN_ONLY=1` | `deploy.sh` | Ejecuta `terraform plan` en lugar de `apply` |
+| `SKIP_MVN=1` | `deploy-backend.sh` | Omite `mvn package` (usa build previo) |
+| `SKIP_DEPLOY=1` | `deploy-backend.sh` | Sube imagen a ECR sin forzar redeploy ECS |
+| `SKIP_INSTALL=1` | `deploy-frontends.sh` | Omite `npm ci` |
+| `IMAGE_TAG=v1` | `deploy-backend.sh` | Tag de imagen distinto de `latest` |
+
+### 4. Paso a paso manual
+
+Alternativa equivalente al script completo, desde la raíz del repo:
+
+```bash
+bash terraform/scripts/terraform-init-remote.sh   # solo la primera vez
+bash ml-training/scripts/build_lambda_dists.sh
+bash analytics-processor/scripts/build_lambda_dist.sh
+cd terraform
+terraform apply -var-file=terraform.tfvars
+cd ..
+bash terraform/scripts/deploy-backend.sh
+bash terraform/scripts/deploy-frontends.sh
+```
+
+### 5. Scripts individuales (`terraform/scripts/`)
+
+| Script | Uso |
+|--------|-----|
 | `deploy.sh` | **Completo:** Lambdas → `terraform apply` → backend → frontends |
-| `deploy-backend.sh` | Buildea imagen y sube a ECS                                     |
-| `deploy-frontends.sh` | Build Vite + sync S3                                            |
+| `deploy-backend.sh` | Build Quarkus, push imagen a ECR y redeploy ECS Fargate |
+| `deploy-frontends.sh` | Build Vite (admin + menú) y sync a buckets S3 website |
+| `terraform-init-remote.sh` | Bootstrap S3 + DynamoDB para state remoto |
+| `run-glue-analytics-enrich.sh` | Ejecuta on-demand el job Glue enrich (demo analytics) |
 
-El empaquetado de Lambdas ocurre en `ml-training/scripts/build_lambda_dists.sh` (lo invoca `deploy.sh`).
+### 6. Empaquetado de Lambdas
 
-### Empaquetado de Lambdas ML
-
-`build_lambda_dists.sh` **siempre usa Docker** (imagen `public.ecr.aws/sam/build-python3.12`) para generar el zip con `psycopg2` compatible con Lambda. Así el comando es el mismo en Linux, macOS y Windows (WSL):
+**ML (orquestador + worker):** `build_lambda_dists.sh` **siempre usa Docker** (imagen `public.ecr.aws/sam/build-python3.12`) para generar zips con `psycopg2` compatible con Lambda:
 
 ```bash
 bash ml-training/scripts/build_lambda_dists.sh
@@ -73,124 +174,57 @@ bash ml-training/scripts/build_lambda_dists.sh
 
 Requisito: **Docker** instalado y en ejecución. Tras un rebuild, volvé a desplegar (`terraform apply` o `deploy.sh`).
 
-Sin Docker (solo desarrollo / CI especial): `LAMBDA_BUILD_NATIVE=1 bash ml-training/scripts/build_lambda_dists.sh` — en macOS ARM puede fallar o romper la Lambda en AWS (`No module named 'psycopg2._psycopg'`).
+Sin Docker (solo desarrollo): `LAMBDA_BUILD_NATIVE=1 bash ml-training/scripts/build_lambda_dists.sh` — en macOS ARM puede fallar en AWS (`No module named 'psycopg2._psycopg'`).
 
-**GitHub Actions:** los runners traen Docker; el workflow no necesita pasos distintos por SO.
-
-Más detalle: `ml-training/README.md`.
-
-## Instrucciones de Ejecución
-
-### Primera vez: estado remoto (S3 + DynamoDB)
-
-Antes del primer `terraform apply`, crear el bucket y la tabla de locks (solo una vez por cuenta AWS):
+**Analytics processor:** empaquetado sin Docker (copia `processor_lambda.py` al directorio de dist):
 
 ```bash
-bash terraform/scripts/terraform-init-remote.sh
+bash analytics-processor/scripts/build_lambda_dist.sh
 ```
 
-Genera `terraform/backend.hcl` (no se commitea) y deja listo `terraform init` contra S3.
+Más detalle ML: `ml-training/README.md`.
 
-Para CI, copiar `TF_STATE_BUCKET` y `TF_STATE_DYNAMODB_TABLE` a los secrets de GitHub (salida del script, del workflow **Terraform init remote**, o `terraform -chdir=terraform/bootstrap output`).
+### 7. Post-despliegue
 
-El script es **idempotente**: si el bucket y la tabla ya existen en la cuenta, omite el `apply` del bootstrap y solo escribe `backend.hcl` + `terraform init`.
-
-### Paso a paso
-
-Iniciando desde la carpeta raiz del repositorio, ejecutar los siguientes comandos
+**Verificar salud del backend:**
 
 ```bash
-bash terraform/scripts/terraform-init-remote.sh #Solo si el backend remoto no fue inicializado 
+curl "$(terraform -chdir=terraform output -raw backend_api_url)/q/health/ready"
 ```
+
+**Confirmar alertas SNS** — si configuraste `alert_email`, revisar el correo y confirmar la suscripción al tópico `{prefix}-alerts`. Sin confirmación no llegan notificaciones de DLQ, 5xx del ALB ni errores Lambda.
+
+**URLs y outputs operativos:**
 
 ```bash
-bash ml-training/scripts/build_lambda_dists.sh 
+terraform -chdir=terraform output backend_api_url
+terraform -chdir=terraform output frontend_admin_website_url
+terraform -chdir=terraform output frontend_menu_website_url
+terraform -chdir=terraform output cloudwatch_dashboard_url
+terraform -chdir=terraform output ml_training_dlq_url
 ```
 
-```bash
-cd ./terraform
-```
+| Output | Descripción |
+|--------|-------------|
+| `backend_api_url` | API Quarkus detrás del ALB (+ WAF) |
+| `frontend_admin_website_url` | Panel admin (S3 website) |
+| `frontend_menu_website_url` | Menú público (S3 website) |
+| `cloudwatch_dashboard_url` | Dashboard operativo (`{prefix}-operations`) |
+| `ml_training_dlq_url` | Cola DLQ del pipeline ML |
+| `alerts_sns_topic_arn` | Tópico SNS de alertas |
+| `db_proxy_endpoint` | Endpoint RDS Proxy (solo operación/debug) |
+| `glue_analytics_enrich_job_name` | Nombre del job Glue enrich |
+| `glue_events_crawler_name` | Nombre del crawler Glue (catálogo Athena) |
 
-```bash
-terraform apply
-```
+### 8. Despliegue vía GitHub Actions
 
-```bash
-bash scripts/deploy-backend.sh
-```
+Ver [CI en GitHub Actions](#ci-en-github-actions). Orden recomendado:
 
-```bash
-bash scripts/deploy-frontends.sh
-```
+1. Configurar secrets `AWS_*` (Learner Lab).
+2. Ejecutar workflow **Terraform init remote** → copiar `TF_STATE_*` al repo.
+3. Ejecutar workflow **AWS deploy** (backend remoto activado por defecto).
 
-```bash
-terraform output frontend_admin_website_url
-terraform output frontend_menu_website_url
-```
-
-### Alternativa - Script completo
-
-`deploy.sh` usa `backend.hcl` automáticamente si existe (ejecutar el bootstrap antes la primera vez):
-
-```bash
-bash terraform/scripts/terraform-init-remote.sh   # solo la primera vez
-bash terraform/scripts/deploy.sh
-```
-
-### Outputs útiles
-
-Las URL de las pagínas y API se pueden consultar con 
-
-```bash
-terraform output backend_api_url
-terraform output frontend_admin_website_url
-terraform output frontend_menu_website_url
-```
-
-### Login federado con Google (Cognito)
-
-El panel admin soporta login con **email/contraseña** y con **Google** (federado vía Cognito Hosted UI,
-flujo OAuth Authorization Code). El login con Google es **opcional**: si no se configuran credenciales,
-el panel sigue funcionando solo con email/contraseña y el botón de Google no se muestra.
-
-**1. Crear credenciales OAuth en Google Cloud Console**
-
-- *APIs & Services → Credentials → Create Credentials → OAuth client ID* (tipo **Web application**).
-- En **Authorized redirect URIs**, agregar la URL de `idpresponse` del dominio de Cognito:
-
-  ```
-  https://<cognito_domain_prefix>.auth.<region>.amazoncognito.com/oauth2/idpresponse
-  ```
-
-  El prefijo se define con la variable `cognito_domain_prefix` (default `menuqr-g3-auth`).
-
-**2. Proveer las credenciales a Terraform (sin commitearlas)**
-
-```bash
-cp terraform/google.auto.tfvars.example terraform/google.auto.tfvars
-# editar terraform/google.auto.tfvars con el Client ID y Client Secret
-```
-
-`*.auto.tfvars` está en `.gitignore`: el secret **nunca** se versiona. En CI, alternativamente:
-
-```bash
-export TF_VAR_google_oauth='{"client_id":"...","client_secret":"..."}'
-```
-
-**3. Aplicar y desplegar**
-
-```bash
-bash terraform/scripts/deploy.sh           # crea el IdP de Google, el dominio y actualiza el client
-# o, si la infra ya existe, solo el frontend:
-bash terraform/scripts/deploy-frontends.sh # inyecta VITE_COGNITO_DOMAIN y las redirect URLs
-```
-
-`deploy-frontends.sh` lee `terraform output cognito_domain` y construye las URLs de redirección
-(`<admin_url>/auth/callback` y `<admin_url>/login`), que coinciden exactamente con los
-`callback_urls`/`logout_urls` del user pool client.
-
-> El user pool client también registra `http://localhost:5173/...` para poder verificar el flujo
-> con `npm run dev` en el frontend admin.
+Las URLs del despliegue aparecen en el **Summary** del job *Deployment URLs*.
 
 ### Justificación del uso de scripts Bash
 
@@ -254,11 +288,77 @@ cat /tmp/orchestrator-out.json
 
 Luego, puede verificarse que haya sido creado en el bucket de ML. Si no hay tenants registrados, no se creará ningun modelo.
 
+### Pipeline analytics y Glue ETL
+
+Los eventos del menú público siguen dos caminos:
+
+| Camino | Latencia | Métricas |
+|--------|----------|----------|
+| **Kinesis → Lambda processor → DynamoDB** | Casi inmediato | Contadores horarios, vistas por ítem, KPIs en tiempo real |
+| **Kinesis → Firehose → S3 Parquet → Glue enrich → DynamoDB `DAY#`** | Batch (Firehose ~5 min + Glue diario) | Sesiones únicas del día, top ítems, breakdown filtros/secciones |
+
+Por defecto el job **`{prefix}-analytics-enrich`** corre **una vez al día** (03:00 UTC) y el crawler de catálogo a las 04:00 UTC. Para una **demostración**, conviene lanzarlo **manualmente** tras generar tráfico en el menú.
+
+#### Flujo recomendado para demo
+
+1. Navegar el **menú público** (vistas, filtros, ítems) durante unos minutos.
+2. **Esperar ~5 minutos** — Firehose escribe Parquet en S3 con `buffering_interval = 300` s.
+3. Ejecutar el job Glue enrich:
+
+```bash
+bash terraform/scripts/run-glue-analytics-enrich.sh
+```
+
+Opciones del script:
+
+| Variable | Efecto |
+|----------|--------|
+| `RUN_CRAWLER=1` | Lanza además el crawler Glue (catálogo Athena; el enrich lee S3 directo) |
+| `SKIP_WAIT=1` | Dispara el job y termina sin esperar (`get-job-run` para seguir el estado) |
+
+Equivalente con AWS CLI:
+
+```bash
+JOB=$(terraform -chdir=terraform output -raw glue_analytics_enrich_job_name)
+RUN_ID=$(aws glue start-job-run --job-name "$JOB" --region us-east-1 --query JobRunId --output text)
+aws glue get-job-run --job-name "$JOB" --run-id "$RUN_ID" --region us-east-1
+```
+
+También desde consola: **Glue → Jobs → `{prefix}-analytics-enrich` → Run**.
+
+4. Refrescar el **dashboard de analytics** en el admin.
+
+El job procesa **hoy y ayer** (UTC). Las métricas en tiempo real del panel no dependen de Glue; solo las enriquecidas del `DAY#` (sesiones únicas, top del día, filtros/secciones agregados).
+
+#### Ajustar el schedule (opcional)
+
+En `terraform/terraform.tfvars`:
+
+```hcl
+glue_analytics = {
+  enrich_schedule_expression = "cron(0/30 * * * ? *)"  # cada 30 min (consume más DPU en lab)
+  enrich_schedule_enabled    = true
+  crawler_schedule           = "cron(15 * * * ? *)"
+}
+```
+
+Solo ejecución manual (desactivar cron):
+
+```hcl
+glue_analytics = {
+  enrich_schedule_expression = "cron(0 3 * * ? *)"
+  enrich_schedule_enabled    = false
+  crawler_schedule           = "cron(0 4 * * ? *)"
+}
+```
+
+Tras cambiar valores: `terraform apply -var-file=terraform.tfvars`.
+
 ## Terraform
 
 ### Estado remoto (S3 + DynamoDB)
 
-El state de Terraform puede guardarse en **S3** con bloqueo en **DynamoDB** (evita applies concurrentes y permite compartir estado entre máquinas y CI).
+El state de Terraform se guarda en **S3** con bloqueo en **DynamoDB** (evita applies concurrentes y permite compartir estado entre máquinas y CI).
 
 | Recurso | Nombre (ejemplo) |
 |---------|------------------|
@@ -266,23 +366,7 @@ El state de Terraform puede guardarse en **S3** con bloqueo en **DynamoDB** (evi
 | Tabla DynamoDB | `menuqr-tf-locks` |
 | Clave del state | `menuqr/terraform.tfstate` |
 
-**Primera vez (bootstrap):** el bucket y la tabla se crean en un stack aparte con estado local (`terraform/bootstrap/`), porque el backend remoto aún no existe.
-
-```bash
-bash terraform/scripts/terraform-init-remote.sh
-```
-
-Eso escribe `terraform/backend.hcl` (gitignored) y ejecuta `terraform init` contra S3. Si ya tenías `terraform.tfstate` local:
-
-```bash
-MIGRATE_LOCAL_STATE=1 bash terraform/scripts/terraform-init-remote.sh
-```
-
-`deploy.sh` usa `backend.hcl` automáticamente si existe.
-
-**CI:** los mismos valores van a los secrets del repositorio (ver [Secrets del repositorio](#secrets-del-repositorio) y el workflow **Terraform init remote**, que los imprime en el job summary). Ejemplo: `menuqr-tfstate-123456789012`, `menuqr-tf-locks`.
-
-Plantilla: `terraform/backend.hcl.example`.
+Bootstrap e init: ver [Primera vez: estado remoto](#2-primera-vez-estado-remoto-s3--dynamodb). Plantilla: `terraform/backend.hcl.example`.
 
 ### CI en GitHub Actions
 
@@ -339,14 +423,15 @@ Al finalizar **AWS deploy**, el paso *Deployment URLs* escribe en el **Summary**
 | Admin SPA (sitio web) | `frontend_admin_website_url` |
 | Menú público (sitio web) | `frontend_menu_website_url` |
 | RDS Proxy | `db_proxy_endpoint` |
+| Dashboard operaciones | `cloudwatch_dashboard_url` |
 
-Son las URLs HTTP del ALB y de los buckets S3 con website hosting (mismos `terraform output` que en la sección **Outputs útiles** más abajo). Los artefactos estáticos viven en los buckets `frontend_admin_s3_bucket` y `frontend_menu_s3_bucket` (visibles en los logs del paso *Deploy frontends*, no en ese summary).
+Son las URLs HTTP del ALB y de los buckets S3 con website hosting (mismos `terraform output` que en [Post-despliegue](#7-post-despliegue)).
 
 **Deploy sin backend remoto (solo pruebas):**
 
 En **Run workflow**, desactivar `use_remote_backend`. No hace falta `TF_STATE_*`. El state vive solo en el runner del job: **no persiste** entre ejecuciones; un segundo deploy puede chocar con recursos ya creados en AWS o intentar recrearlos. Útil para un lab desechable o una primera prueba rápida; para trabajo habitual usar remoto.
 
-Equivalente local con remoto: `bash terraform/scripts/terraform-init-remote.sh` y luego `bash terraform/scripts/deploy.sh`. Sin remoto: `terraform init -backend=false` en `terraform/` y el mismo `deploy.sh` (si no existe `backend.hcl`).
+Equivalente local con remoto: ver [Despliegue completo](#3-despliegue-completo-recomendado). Sin remoto: `terraform init -backend=false` en `terraform/` y el mismo `deploy.sh` (si no existe `backend.hcl`).
 
 #### Plan en PR/push (`terraform_init_validate_plan.yml`)
 
