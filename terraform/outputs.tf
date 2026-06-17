@@ -105,10 +105,6 @@ output "kinesis_stream_arn" {
   value = aws_kinesis_stream.menuqr_events.arn
 }
 
-output "analytics_processor_dlq_url" {
-  value = aws_sqs_queue.analytics_processor_dlq.url
-}
-
 output "firehose_delivery_stream_name" {
   value = aws_kinesis_firehose_delivery_stream.menuqr_events.name
 }
