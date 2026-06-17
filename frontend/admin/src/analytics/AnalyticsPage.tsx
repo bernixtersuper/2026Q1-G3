@@ -8,11 +8,12 @@ import { ViewedVsSoldMatrix } from './ViewedVsSoldMatrix';
 import { ItemRankingTable } from './ItemRankingTable';
 import { RealtimePanel } from './RealtimePanel';
 import { TrendsSection } from './TrendsSection';
+import { MenuInsightsSection } from './MenuInsightsSection';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import type { ItemAnalytics } from '@/shared/types';
 
-type Tab = 'overview' | 'trends';
+type Tab = 'overview' | 'trends' | 'insights';
 
 export function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -90,11 +91,20 @@ export function AnalyticsPage() {
           >
             Tendencias
           </Button>
+          <Button
+            variant={tab === 'insights' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTab('insights')}
+          >
+            Insights
+          </Button>
         </div>
       </div>
 
       {tab === 'trends' ? (
         <TrendsSection />
+      ) : tab === 'insights' ? (
+        <MenuInsightsSection />
       ) : (
         <>
           <KpiCards data={summary} />

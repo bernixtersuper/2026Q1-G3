@@ -36,6 +36,9 @@ public class AnalyticsResource {
     @Inject
     GetAnalyticsTrendsUseCase getAnalyticsTrendsUseCase;
 
+    @Inject
+    GetMenuInsightsUseCase getMenuInsightsUseCase;
+
     @GET
     @Path("/summary")
     @Operation(summary = "Business summary KPIs")
@@ -71,4 +74,22 @@ public class AnalyticsResource {
     public Response getTrends(@QueryParam("days") @DefaultValue("30") int days) {
         return Response.ok(getAnalyticsTrendsUseCase.execute(days)).build();
     }
+
+    @POST
+    @Path("/export")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Start async CSV export via Athena")
+    public Response startExport(ExportRequest request) {
+        int days = request != null && request.days() != null ? request.days() : 30;
+        return Response.accepted(analyticsExportUseCase.startExport(days)).build();
+    }
+
+    @GET
+    @Path("/export/{jobId}")
+    @Operation(summary = "Poll async export job status")
+    public Response getExportStatus(@PathParam("jobId") String jobId) {
+        return Response.ok(analyticsExportUseCase.getStatus(jobId)).build();
+    }
+
+    public record ExportRequest(Integer days) {}
 }

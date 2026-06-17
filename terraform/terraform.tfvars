@@ -29,3 +29,6 @@ ml_training = {
 
 alert_email = "ctepedino@itba.edu.ar"
 
+# Dejar en false fuera de demos: con false el endpoint responde 404. Ver docs/seeding-demo.md.
+demo_seed_enabled = true
+

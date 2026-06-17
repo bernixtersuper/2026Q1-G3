@@ -240,4 +240,124 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
 
         return new ArrayList<>(byDate.values());
     }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<ItemPairCount> frequentlyBoughtTogether(TenantId tenantId, Instant from, Instant to, int limit) {
+        // Self-join order_items on the same order; a < b yields each unordered pair once and
+        // excludes pairing an item with itself. COUNT(DISTINCT order) is robust to duplicate rows.
+        List<Object[]> rows = em.createNativeQuery("""
+            SELECT a.menu_item_id, b.menu_item_id, COUNT(DISTINCT o.id)::bigint AS cooccurrence
+            FROM order_items a
+            JOIN order_items b ON a.order_id = b.order_id AND a.menu_item_id < b.menu_item_id
+            JOIN orders o ON o.id = a.order_id
+            WHERE o.restaurant_id = :rid
+              AND o.status NOT IN ('DRAFT', 'CANCELLED')
+              AND o.submitted_at >= :from AND o.submitted_at < :to
+            GROUP BY a.menu_item_id, b.menu_item_id
+            ORDER BY cooccurrence DESC
+            LIMIT :lim
+            """)
+            .setParameter("rid", tenantId.value())
+            .setParameter("from", from)
+            .setParameter("to", to)
+            .setParameter("lim", limit)
+            .getResultList();
+
+        return rows.stream()
+            .map(r -> new ItemPairCount(
+                r[0].toString(),
+                r[1].toString(),
+                ((Number) r[2]).longValue()
+            ))
+            .toList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<ItemSalesStat> itemSalesStats(TenantId tenantId, Instant from, Instant to) {
+        List<Object[]> rows = em.createNativeQuery("""
+            SELECT oi.menu_item_id, mi.name,
+                   SUM(oi.quantity)::bigint AS qty,
+                   SUM(oi.quantity * oi.unit_price) AS revenue,
+                   COUNT(DISTINCT oi.order_id)::bigint AS orders_with_item
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            JOIN menu_items mi ON mi.id = oi.menu_item_id
+            WHERE o.restaurant_id = :rid
+              AND o.status NOT IN ('DRAFT', 'CANCELLED')
+              AND o.submitted_at >= :from AND o.submitted_at < :to
+            GROUP BY oi.menu_item_id, mi.name
+            """)
+            .setParameter("rid", tenantId.value())
+            .setParameter("from", from)
+            .setParameter("to", to)
+            .getResultList();
+
+        return rows.stream()
+            .map(r -> new ItemSalesStat(
+                r[0].toString(),
+                (String) r[1],
+                ((Number) r[2]).longValue(),
+                r[3] != null ? new BigDecimal(r[3].toString()) : BigDecimal.ZERO,
+                ((Number) r[4]).longValue()
+            ))
+            .toList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<ModifierStat> topModifiers(TenantId tenantId, Instant from, Instant to, int limit) {
+        List<Object[]> rows = em.createNativeQuery("""
+            SELECT oim.modifier_name,
+                   SUM(oi.quantity)::bigint AS times_selected,
+                   SUM(oi.quantity * oim.price_adjustment) AS revenue
+            FROM order_item_modifiers oim
+            JOIN order_items oi ON oi.id = oim.order_item_id
+            JOIN orders o ON o.id = oi.order_id
+            WHERE o.restaurant_id = :rid
+              AND o.status NOT IN ('DRAFT', 'CANCELLED')
+              AND o.submitted_at >= :from AND o.submitted_at < :to
+            GROUP BY oim.modifier_name
+            ORDER BY times_selected DESC
+            LIMIT :lim
+            """)
+            .setParameter("rid", tenantId.value())
+            .setParameter("from", from)
+            .setParameter("to", to)
+            .setParameter("lim", limit)
+            .getResultList();
+
+        return rows.stream()
+            .map(r -> new ModifierStat(
+                (String) r[0],
+                ((Number) r[1]).longValue(),
+                r[2] != null ? new BigDecimal(r[2].toString()) : BigDecimal.ZERO
+            ))
+            .toList();
+    }
+
+    @Override
+    public BasketSummary basketSummary(TenantId tenantId, Instant from, Instant to) {
+        Object[] row = (Object[]) em.createNativeQuery("""
+            SELECT COUNT(DISTINCT o.id)::bigint AS orders,
+                   COALESCE(SUM(oi.quantity), 0)::bigint AS units,
+                   COUNT(DISTINCT oi.menu_item_id)::bigint AS distinct_items
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.restaurant_id = :rid
+              AND o.status NOT IN ('DRAFT', 'CANCELLED')
+              AND o.submitted_at >= :from AND o.submitted_at < :to
+            """)
+            .setParameter("rid", tenantId.value())
+            .setParameter("from", from)
+            .setParameter("to", to)
+            .getSingleResult();
+
+        return new BasketSummary(
+            ((Number) row[0]).longValue(),
+            ((Number) row[1]).longValue(),
+            ((Number) row[2]).longValue()
+        );
+    }
 }
