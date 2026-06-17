@@ -40,8 +40,9 @@ locals {
   analytics_processor_root = "${path.module}/../analytics-processor"
   analytics_processor_dist = "${local.analytics_processor_root}/lambda_dist/processor"
 
-  analytics_bronze_bucket_name = module.s3_analytics_bronze.bucket_name
-  analytics_silver_bucket_name = module.s3_analytics_silver.bucket_name
+  analytics_bronze_bucket_name    = module.s3_analytics_bronze.bucket_name
+  analytics_silver_bucket_name    = module.s3_analytics_silver.bucket_name
+  analytics_processed_bucket_name = module.s3_analytics_processed.bucket_name
 
   backend_image = "${aws_ecr_repository.backend.repository_url}:${var.backend.image_tag}"
 

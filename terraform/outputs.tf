@@ -83,16 +83,18 @@ output "cognito_issuer_url" {
 }
 
 output "analytics_bronze_bucket" {
-  value = local.analytics_bronze_bucket_name
+  description = "S3 bucket de eventos crudos (Firehose → Parquet en events/)."
+  value       = local.analytics_bronze_bucket_name
 }
 
 output "analytics_silver_bucket" {
-  value = local.analytics_silver_bucket_name
-
+  description = "S3 bucket de features ML (Glue enrich → ml_features/)."
+  value       = local.analytics_silver_bucket_name
 }
-output "cognito_domain" {
-  description = "Dominio del Hosted UI de Cognito (sin esquema), usado por Amplify para el flujo OAuth."
-  value       = "${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
+
+output "analytics_processed_bucket" {
+  description = "S3 bucket reservado para datos procesados / export ad-hoc."
+  value       = local.analytics_processed_bucket_name
 }
 
 output "kinesis_stream_name" {
@@ -119,8 +121,8 @@ output "glue_analytics_enrich_job_name" {
   value = aws_glue_job.analytics_enrich.name
 }
 
-output "athena_workgroup_name" {
-  value = aws_athena_workgroup.analytics.name
+output "glue_events_crawler_name" {
+  value = aws_glue_crawler.events.name
 }
 
 output "waf_web_acl_arn" {

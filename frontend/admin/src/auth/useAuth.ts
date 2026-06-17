@@ -56,6 +56,13 @@ function clearSession() {
   localStorage.removeItem(STORAGE_KEY_RESTAURANT_NAME);
 }
 
+/** Token de app persistido y vigente (md_*). Usado para decidir auto-recuperación en /login. */
+export function getPersistedAppToken(): string | null {
+  const token = localStorage.getItem(STORAGE_KEY_TOKEN);
+  if (token && isTokenLive(token)) return token;
+  return null;
+}
+
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>(readPersistedState);
 
@@ -76,6 +83,11 @@ export function useAuth() {
   }, [establishSession]);
 
   const logout = useCallback(async () => {
+    try {
+      await signOutEverywhere();
+    } catch {
+      // Continuar limpiando estado local aunque falle el sign-out remoto.
+    }
     clearSession();
     setAuthState({
       token: null,
@@ -83,12 +95,6 @@ export function useAuth() {
       restaurantName: null,
       isAuthenticated: false,
     });
-
-    try {
-      await signOutEverywhere();
-    } catch {
-      // Swallow — we've already cleared local state.
-    }
     window.location.assign('/login');
   }, []);
 

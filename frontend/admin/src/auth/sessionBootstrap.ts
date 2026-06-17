@@ -20,7 +20,7 @@ export async function bootstrapBackendSession(
   try {
     const session = await authApi.bootstrapSession(tokens.idToken);
     establishSession(tokens.accessToken, session);
-    navigate('/admin', { replace: true });
+    navigate('/admin/menu', { replace: true });
     return { ok: true };
   } catch (apiError) {
     if (isAxiosError(apiError) && apiError.response?.status === 401 && apiError.response?.data?.code === 'UNKNOWN_USER') {

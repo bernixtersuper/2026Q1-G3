@@ -64,6 +64,24 @@ variable "ml_training" {
   })
 }
 
+variable "glue_analytics" {
+  type = object({
+    enrich_schedule_expression = string
+    enrich_schedule_enabled    = bool
+    crawler_schedule           = string
+  })
+  default = {
+    enrich_schedule_expression = "cron(0 3 * * ? *)"
+    enrich_schedule_enabled    = true
+    crawler_schedule           = "cron(0 4 * * ? *)"
+  }
+  description = <<-EOT
+    Glue analytics: job enrich (S3 Parquet → Dynamo DAY#) y crawler del catálogo.
+    Para demo manual preferí RUN_GLUE=1 bash terraform/scripts/run-glue-analytics-enrich.sh.
+    Ejemplo schedule más frecuente: enrich_schedule_expression = "cron(0/30 * * * ? *)" (cada 30 min).
+  EOT
+}
+
 variable "waf" {
   type = object({
     enabled           = optional(bool, true)
@@ -75,28 +93,5 @@ variable "waf" {
   }
 
   description = "WAF regional en el ALB. global_rate_limit = requests por IP en ventana de 5 minutos."
-}
-
-variable "cognito_domain_prefix" {
-  type        = string
-  description = "Prefijo del dominio Hosted UI de Cognito (https://<prefix>.auth.<region>.amazoncognito.com). Debe ser único por región."
-  default     = "menuqr-g3-auth"
-}
-
-variable "google_oauth" {
-  type = object({
-    client_id     = string
-    client_secret = string
-  })
-  description = <<-EOT
-    Credenciales OAuth 2.0 de Google Cloud Console para el login federado en Cognito.
-    NO commitear el secret: proveer via `TF_VAR_google_oauth` o un archivo `*.auto.tfvars` ignorado por git
-    (ver google.auto.tfvars.example). Con cadenas vacías no se crea el IdP de Google.
-  EOT
-  sensitive   = true
-  default = {
-    client_id     = ""
-    client_secret = ""
-  }
 }
 

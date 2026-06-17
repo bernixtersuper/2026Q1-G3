@@ -117,7 +117,7 @@ export function RegisterPage() {
         slug: formData.slug,
       }, tokens.idToken, tokens.accessToken);
       toast({ title: 'Welcome!', description: 'Your restaurant has been registered', variant: 'success' });
-      navigate('/admin');
+      navigate('/admin/menu');
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
         const axiosError = err as { response?: { status?: number; data?: { code?: string } } };

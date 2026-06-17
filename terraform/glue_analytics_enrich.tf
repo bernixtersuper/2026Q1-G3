@@ -38,8 +38,8 @@ resource "aws_glue_job" "analytics_enrich" {
 resource "aws_glue_trigger" "analytics_enrich_schedule" {
   name     = "${local.name_prefix}-analytics-enrich-daily"
   type     = "SCHEDULED"
-  schedule = "cron(0 3 * * ? *)"
-  enabled  = true
+  schedule = var.glue_analytics.enrich_schedule_expression
+  enabled  = var.glue_analytics.enrich_schedule_enabled
 
   actions {
     job_name = aws_glue_job.analytics_enrich.name
