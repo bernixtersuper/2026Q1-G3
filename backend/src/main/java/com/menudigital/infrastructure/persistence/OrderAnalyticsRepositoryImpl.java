@@ -247,7 +247,7 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
         // Self-join order_items on the same order; a < b yields each unordered pair once and
         // excludes pairing an item with itself. COUNT(DISTINCT order) is robust to duplicate rows.
         List<Object[]> rows = em.createNativeQuery("""
-            SELECT a.menu_item_id, b.menu_item_id, COUNT(DISTINCT o.id)::bigint AS cooccurrence
+            SELECT a.menu_item_id, b.menu_item_id, CAST(COUNT(DISTINCT o.id) AS BIGINT) AS cooccurrence
             FROM order_items a
             JOIN order_items b ON a.order_id = b.order_id AND a.menu_item_id < b.menu_item_id
             JOIN orders o ON o.id = a.order_id
@@ -278,9 +278,9 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
     public List<ItemSalesStat> itemSalesStats(TenantId tenantId, Instant from, Instant to) {
         List<Object[]> rows = em.createNativeQuery("""
             SELECT oi.menu_item_id, mi.name,
-                   SUM(oi.quantity)::bigint AS qty,
+                   CAST(SUM(oi.quantity) AS BIGINT) AS qty,
                    SUM(oi.quantity * oi.unit_price) AS revenue,
-                   COUNT(DISTINCT oi.order_id)::bigint AS orders_with_item
+                   CAST(COUNT(DISTINCT oi.order_id) AS BIGINT) AS orders_with_item
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             JOIN menu_items mi ON mi.id = oi.menu_item_id
@@ -310,7 +310,7 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
     public List<ModifierStat> topModifiers(TenantId tenantId, Instant from, Instant to, int limit) {
         List<Object[]> rows = em.createNativeQuery("""
             SELECT oim.modifier_name,
-                   SUM(oi.quantity)::bigint AS times_selected,
+                   CAST(SUM(oi.quantity) AS BIGINT) AS times_selected,
                    SUM(oi.quantity * oim.price_adjustment) AS revenue
             FROM order_item_modifiers oim
             JOIN order_items oi ON oi.id = oim.order_item_id
@@ -340,9 +340,9 @@ public class OrderAnalyticsRepositoryImpl implements OrderAnalyticsRepository {
     @Override
     public BasketSummary basketSummary(TenantId tenantId, Instant from, Instant to) {
         Object[] row = (Object[]) em.createNativeQuery("""
-            SELECT COUNT(DISTINCT o.id)::bigint AS orders,
-                   COALESCE(SUM(oi.quantity), 0)::bigint AS units,
-                   COUNT(DISTINCT oi.menu_item_id)::bigint AS distinct_items
+            SELECT CAST(COUNT(DISTINCT o.id) AS BIGINT) AS orders,
+                   CAST(COALESCE(SUM(oi.quantity), 0) AS BIGINT) AS units,
+                   CAST(COUNT(DISTINCT oi.menu_item_id) AS BIGINT) AS distinct_items
             FROM orders o
             JOIN order_items oi ON oi.order_id = o.id
             WHERE o.restaurant_id = :rid
