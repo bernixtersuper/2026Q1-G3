@@ -54,6 +54,10 @@ output "ml_training_dlq_url" {
   value = aws_sqs_queue.ml-training-dlq.url
 }
 
+output "analytics_processor_dlq_url" {
+  value = aws_sqs_queue.analytics_processor_dlq.url
+}
+
 output "alerts_sns_topic_arn" {
   value = aws_sns_topic.alerts.arn
 }
