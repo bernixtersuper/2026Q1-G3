@@ -8,7 +8,7 @@ resource "aws_glue_crawler" "events" {
   database_name = aws_glue_catalog_database.menuqr.name
 
   s3_target {
-    path = "s3://${module.s3_analytics.bucket_name}/events/"
+    path = "s3://${module.s3_analytics_events.bucket_name}/"
   }
 
   schedule = var.glue_analytics.crawler_schedule

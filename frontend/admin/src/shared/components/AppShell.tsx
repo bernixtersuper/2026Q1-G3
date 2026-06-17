@@ -4,10 +4,10 @@ import { UtensilsCrossed, BarChart3, LogOut, QrCode, ClipboardList, Palette, Shi
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { to: '/admin', icon: BarChart3, label: 'Analytics' },
   { to: '/admin/menu', icon: UtensilsCrossed, label: 'Menu' },
   { to: '/admin/tables', icon: QrCode, label: 'Tables & QR' },
   { to: '/admin/orders', icon: ClipboardList, label: 'Orders' },
+  { to: '/admin/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/admin/theme', icon: Palette, label: 'Theme' },
   { to: '/admin/security', icon: Shield, label: 'Security' },
 ];
@@ -34,7 +34,7 @@ export function AppShell() {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === '/admin'}
+                  end={item.to === '/admin/menu'}
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',

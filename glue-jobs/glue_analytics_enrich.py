@@ -1,6 +1,6 @@
 """
-Glue ETL nocturno: dedup eventos S3 → enriquece DAY# en DynamoDB.
-Materializa uniqueMenuSessions, topItemIds, filterBreakdown, sectionBreakdown, batchCompletedAt.
+Glue ETL nocturno: lee eventos crudos (bucket Firehose) → dedup → escribe Parquet curado
+(bucket processed, consumido por ML worker) → enriquece DAY# en DynamoDB.
 """
 import json
 import sys
@@ -16,7 +16,7 @@ from pyspark.sql.window import Window
 
 args = getResolvedOptions(
     sys.argv,
-    ["JOB_NAME", "ANALYTICS_TABLE", "ANALYTICS_BUCKET", "TOP_N"],
+    ["JOB_NAME", "SOURCE_BUCKET", "OUTPUT_BUCKET", "ANALYTICS_TABLE", "TOP_N"],
 )
 
 optional = {}
@@ -24,8 +24,9 @@ for key in ("GLUE_DATABASE", "EVENTS_TABLE", "AWS_REGION"):
     if f"--{key}" in sys.argv:
         optional[key] = getResolvedOptions(sys.argv, [key])[key]
 
+source_bucket = args["SOURCE_BUCKET"]
+output_bucket = args["OUTPUT_BUCKET"]
 analytics_table = args["ANALYTICS_TABLE"]
-bucket = args["ANALYTICS_BUCKET"]
 top_n = int(args.get("TOP_N", "10"))
 region = optional.get("AWS_REGION", "us-east-1")
 
@@ -55,18 +56,22 @@ def normalize_columns(df):
     return df
 
 
-def read_day_parquet(target_date):
-    prefix = (
-        f"s3://{bucket}/events/year={target_date.year}/"
+def day_prefix(bucket: str, target_date) -> str:
+    return (
+        f"s3://{bucket}/year={target_date.year}/"
         f"month={target_date.month:02d}/day={target_date.day:02d}/"
     )
+
+
+def read_day_parquet(target_date):
+    prefix = day_prefix(source_bucket, target_date)
     try:
         df = spark.read.parquet(prefix)
         if df.rdd.isEmpty():
             return None
         return normalize_columns(df)
     except Exception as exc:
-        print(f"No Parquet data for {target_date}: {exc}")
+        print(f"No Parquet data for {target_date} in {source_bucket}: {exc}")
         return None
 
 
@@ -75,12 +80,25 @@ def dedup_events(df):
     return df.withColumn("rn", F.row_number().over(w)).filter(F.col("rn") == 1).drop("rn")
 
 
+def write_processed_parquet(df, target_date):
+    out_path = day_prefix(output_bucket, target_date)
+    (
+        df.coalesce(1)
+        .write.mode("overwrite")
+        .option("compression", "snappy")
+        .parquet(out_path)
+    )
+    print(f"Wrote processed Parquet to {out_path}")
+
+
 def enrich_date(target_date):
     df = read_day_parquet(target_date)
     if df is None:
         return
 
     df = dedup_events(df)
+    write_processed_parquet(df, target_date)
+
     date_str = target_date.isoformat()
     batch_completed_at = datetime.now(timezone.utc).isoformat()
     ddb = boto3.client("dynamodb", region_name=region)

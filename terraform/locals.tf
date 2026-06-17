@@ -37,7 +37,8 @@ locals {
   analytics_processor_root = "${path.module}/../analytics-processor"
   analytics_processor_dist = "${local.analytics_processor_root}/lambda_dist/processor"
 
-  analytics_bucket_name = module.s3_analytics.bucket_name
+  analytics_events_bucket_name    = module.s3_analytics_events.bucket_name
+  analytics_processed_bucket_name = module.s3_analytics_processed.bucket_name
 
   backend_image = "${aws_ecr_repository.backend.repository_url}:${var.backend.image_tag}"
 

@@ -71,7 +71,7 @@ export function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/admin', { replace: true });
+      navigate('/admin/menu', { replace: true });
       return;
     }
     if (!configured) return;

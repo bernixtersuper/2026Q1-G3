@@ -50,7 +50,7 @@ def read_events_from_s3(tenant_id: str, date_str: str) -> tuple[dict[str, int], 
         return {}, {}
 
     year, month, day = date_str.split("-")
-    prefix = f"events/year={year}/month={int(month):02d}/day={int(day):02d}/"
+    prefix = f"year={year}/month={int(month):02d}/day={int(day):02d}/"
     view_counts: dict[str, int] = defaultdict(int)
     order_boosts: dict[str, int] = defaultdict(int)
     seen_event_ids: set[str] = set()
@@ -116,7 +116,7 @@ def query_item_views(tenant_id: str, date_str: str) -> dict[str, int]:
     if not counts:
         raise ValueError(
             f"No hay eventos en S3 para tenant={tenant_id} day={date_str}. "
-            "Verifica Firehose y el prefijo events/ en el bucket analytics."
+            "Verifica que Glue haya escrito Parquet en el bucket processed."
         )
     return counts
 

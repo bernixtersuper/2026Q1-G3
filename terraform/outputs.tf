@@ -83,7 +83,13 @@ output "cognito_issuer_url" {
 }
 
 output "analytics_events_bucket" {
-  value = local.analytics_bucket_name
+  description = "S3 bucket de eventos crudos (Firehose → Parquet)."
+  value       = local.analytics_events_bucket_name
+}
+
+output "analytics_processed_bucket" {
+  description = "S3 bucket de eventos procesados por Glue (ML worker)."
+  value       = local.analytics_processed_bucket_name
 }
 
 output "kinesis_stream_name" {

@@ -31,16 +31,16 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<AnalyticsPage />} />
-          <Route path="analytics" element={<Navigate to="/admin" replace />} />
+          <Route index element={<Navigate to="menu" replace />} />
           <Route path="menu" element={<MenuPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="tables" element={<TablesPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="theme" element={<ThemePage />} />
           <Route path="security" element={<SecurityPage />} />
         </Route>
-        <Route path="/" element={<Navigate to="/admin" replace />} />
-        <Route path="*" element={<Navigate to="/admin" replace />} />
+        <Route path="/" element={<Navigate to="/admin/menu" replace />} />
+        <Route path="*" element={<Navigate to="/admin/menu" replace />} />
       </Routes>
       <Toaster />
     </BrowserRouter>

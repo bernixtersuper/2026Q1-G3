@@ -1,5 +1,5 @@
 resource "aws_s3_object" "glue_analytics_enrich_script" {
-  bucket = module.s3_analytics.bucket_name
+  bucket = module.s3_analytics_processed.bucket_name
   key    = "glue-scripts/glue_analytics_enrich.py"
   source = "${path.module}/../glue-jobs/glue_analytics_enrich.py"
   etag   = filemd5("${path.module}/../glue-jobs/glue_analytics_enrich.py")
@@ -11,7 +11,7 @@ resource "aws_glue_job" "analytics_enrich" {
   glue_version = "4.0"
 
   command {
-    script_location = "s3://${module.s3_analytics.bucket_name}/${aws_s3_object.glue_analytics_enrich_script.key}"
+    script_location = "s3://${module.s3_analytics_processed.bucket_name}/${aws_s3_object.glue_analytics_enrich_script.key}"
     python_version  = "3"
   }
 
@@ -23,8 +23,9 @@ resource "aws_glue_job" "analytics_enrich" {
     "--job-language"                     = "python"
     "--enable-metrics"                   = "true"
     "--enable-continuous-cloudwatch-log" = "true"
+    "--SOURCE_BUCKET"                    = module.s3_analytics_events.bucket_name
+    "--OUTPUT_BUCKET"                    = module.s3_analytics_processed.bucket_name
     "--ANALYTICS_TABLE"                  = aws_dynamodb_table.menuqr_analytics.name
-    "--ANALYTICS_BUCKET"                 = module.s3_analytics.bucket_name
     "--GLUE_DATABASE"                    = aws_glue_catalog_database.menuqr.name
     "--EVENTS_TABLE"                     = aws_glue_catalog_table.events_firehose.name
     "--TOP_N"                            = "10"

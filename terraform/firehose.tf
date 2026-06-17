@@ -9,8 +9,8 @@ resource "aws_kinesis_firehose_delivery_stream" "menuqr_events" {
 
   extended_s3_configuration {
     role_arn            = local.lab_role_arn
-    bucket_arn          = module.s3_analytics.bucket_arn
-    prefix              = "events/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
+    bucket_arn          = module.s3_analytics_events.bucket_arn
+    prefix              = "year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
     error_output_prefix = "errors/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/!{firehose:error-output-type}/"
 
     buffering_size     = 64
@@ -71,7 +71,7 @@ resource "aws_glue_catalog_table" "events_firehose" {
   }
 
   storage_descriptor {
-    location      = "s3://${module.s3_analytics.bucket_name}/events/"
+    location      = "s3://${module.s3_analytics_events.bucket_name}/"
     input_format  = "org.apache.hadoop.mapred.TextInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
 
