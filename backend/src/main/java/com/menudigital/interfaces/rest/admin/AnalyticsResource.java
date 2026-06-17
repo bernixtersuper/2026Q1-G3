@@ -40,6 +40,9 @@ public class AnalyticsResource {
     @Inject
     AnalyticsExportUseCase analyticsExportUseCase;
 
+    @Inject
+    GetMenuInsightsUseCase getMenuInsightsUseCase;
+
     @GET
     @Path("/summary")
     @Operation(summary = "Business summary KPIs")
@@ -74,6 +77,24 @@ public class AnalyticsResource {
     @Operation(summary = "Historical trends (7–90 days)")
     public Response getTrends(@QueryParam("days") @DefaultValue("30") int days) {
         return Response.ok(getAnalyticsTrendsUseCase.execute(days)).build();
+    }
+
+    @GET
+    @Path("/menu-insights")
+    @Operation(summary = "Owner menu insights — bought together, menu engineering, modifiers (1–90 days)")
+    public Response getMenuInsights(@QueryParam("days") @DefaultValue("30") int days) {
+        return Response.ok(getMenuInsightsUseCase.execute(days)).build();
+    }
+
+    @GET
+    @Path("/menu-insights/export")
+    @Produces("text/csv")
+    @Operation(summary = "Download menu insights as CSV (1–90 days)")
+    public Response exportMenuInsights(@QueryParam("days") @DefaultValue("30") int days) {
+        String csv = getMenuInsightsUseCase.exportCsv(days);
+        return Response.ok(csv)
+            .header("Content-Disposition", "attachment; filename=\"menu-insights-" + days + "d.csv\"")
+            .build();
     }
 
     @POST

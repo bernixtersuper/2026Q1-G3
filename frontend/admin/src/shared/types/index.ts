@@ -190,3 +190,47 @@ export interface UpdateModifierRequest {
   available: boolean;
   displayOrder: number;
 }
+
+// --- Owner menu insights ---
+
+export type MenuEngineeringClass = 'STAR' | 'PLOWHORSE' | 'PUZZLE' | 'DOG';
+
+export interface ItemPairRow {
+  itemAId: string;
+  itemAName: string;
+  itemBId: string;
+  itemBName: string;
+  coOccurrenceCount: number;
+  support: number;
+  lift: number;
+}
+
+export interface MenuItemClass {
+  itemId: string;
+  itemName: string;
+  quantitySold: number;
+  revenue: number;
+  classification: MenuEngineeringClass;
+}
+
+export interface MenuEngineering {
+  avgQuantity: number;
+  avgRevenue: number;
+  items: MenuItemClass[];
+}
+
+export interface ModifierRow {
+  modifierName: string;
+  timesSelected: number;
+  revenue: number;
+}
+
+export interface MenuInsights {
+  days: number;
+  ordersAnalyzed: number;
+  avgBasketSize: number;
+  distinctItemsSold: number;
+  frequentlyBoughtTogether: ItemPairRow[];
+  menuEngineering: MenuEngineering;
+  topModifiers: ModifierRow[];
+}

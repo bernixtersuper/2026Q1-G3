@@ -63,6 +63,7 @@ resource "aws_ecs_task_definition" "backend" {
       { name = "DYNAMO_ANALYTICS_TABLE", value = aws_dynamodb_table.menuqr_analytics.name },
       { name = "KINESIS_STREAM_NAME", value = aws_kinesis_stream.menuqr_events.name },
       { name = "ANALYTICS_KINESIS_ENABLED", value = "true" },
+      { name = "DEMO_SEED_ENABLED", value = tostring(var.demo_seed_enabled) },
       { name = "ATHENA_WORKGROUP", value = aws_athena_workgroup.analytics.name },
       { name = "ATHENA_DATABASE", value = aws_glue_catalog_database.menuqr.name },
       { name = "ANALYTICS_PROCESSED_BUCKET", value = module.s3_analytics_processed.bucket_name },

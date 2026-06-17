@@ -95,3 +95,9 @@ variable "waf" {
   description = "WAF regional en el ALB. global_rate_limit = requests por IP en ventana de 5 minutos."
 }
 
+
+variable "demo_seed_enabled" {
+  type        = bool
+  default     = false
+  description = "Enables the hidden POST /api/admin/demo/seed endpoint that populates the caller's tenant with demo data. Keep false in real environments; set true (via tfvars) for a presentation."
+}

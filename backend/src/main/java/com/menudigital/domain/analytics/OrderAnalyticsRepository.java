@@ -31,9 +31,31 @@ public interface OrderAnalyticsRepository {
 
     List<DailyOrderStats> dailyStats(TenantId tenantId, LocalDate from, LocalDate to);
 
+    // --- Owner-facing menu insights (market basket, menu engineering, modifiers) ---
+
+    /** Pairs of menu items co-occurring within the same order, most frequent first. */
+    List<ItemPairCount> frequentlyBoughtTogether(TenantId tenantId, Instant from, Instant to, int limit);
+
+    /** Per-item sales aggregates over the window: units, revenue and number of orders containing the item. */
+    List<ItemSalesStat> itemSalesStats(TenantId tenantId, Instant from, Instant to);
+
+    /** Most-selected order modifiers (extras) with the revenue they generated. */
+    List<ModifierStat> topModifiers(TenantId tenantId, Instant from, Instant to, int limit);
+
+    /** Basket-level summary over the window: number of orders, total units and distinct items sold. */
+    BasketSummary basketSummary(TenantId tenantId, Instant from, Instant to);
+
     record TopSoldItem(String menuItemId, String itemName, long quantitySold, BigDecimal revenue) {}
 
     record RealtimeOrderBucket(Instant bucketStart, long orderCount) {}
 
     record DailyOrderStats(LocalDate date, long orders, BigDecimal revenue, long distinctSessions) {}
+
+    record ItemPairCount(String itemAId, String itemBId, long coOccurrenceCount) {}
+
+    record ItemSalesStat(String menuItemId, String itemName, long quantitySold, BigDecimal revenue, long ordersWithItem) {}
+
+    record ModifierStat(String modifierName, long timesSelected, BigDecimal revenue) {}
+
+    record BasketSummary(long orders, long totalUnits, long distinctItems) {}
 }
